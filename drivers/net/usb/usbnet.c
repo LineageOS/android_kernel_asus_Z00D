@@ -564,17 +564,19 @@ static inline void rx_process (struct usbnet *dev, struct sk_buff *skb)
 	}
 	// else network stack removes extra byte if we forced a short packet
 
-	if (skb->len) {
-		/* all data was already cloned from skb inside the driver */
-		if (dev->driver_info->flags & FLAG_MULTI_PACKET)
-			dev_kfree_skb_any(skb);
-		else
-			usbnet_skb_return(dev, skb);
+	/* all data was already cloned from skb inside the driver */
+	if (dev->driver_info->flags & FLAG_MULTI_PACKET)
+		goto done;
+
+	if (skb->len < ETH_HLEN) {
+		dev->net->stats.rx_errors++;
+		dev->net->stats.rx_length_errors++;
+		netif_dbg(dev, rx_err, dev->net, "rx length %d\n", skb->len);
+	} else {
+		usbnet_skb_return(dev, skb);
 		return;
 	}
 
-	netif_dbg(dev, rx_err, dev->net, "drop\n");
-	dev->net->stats.rx_errors++;
 done:
 	skb_queue_tail(&dev->done, skb);
 }
@@ -596,30 +598,6 @@ static void rx_complete (struct urb *urb)
 	switch (urb_status) {
 	/* success */
 	case 0:
-		if (skb->len < dev->net->hard_header_len) {
-			state = rx_cleanup;
-			dev->net->stats.rx_errors++;
-			dev->net->stats.rx_length_errors++;
-			netif_dbg(dev, rx_err, dev->net,
-				  "rx length %d\n", skb->len);
-		}
-		/* In the bug analysis, in general, the error frame is
-		 * more valuable. So here we ignore the NCM fixup,
-		 * and directly dump all the data if there is no URB
-		 * error.
-		 */
-		if (is_hsic_modem(urb->dev)) {
-			if (usbnet_data_dump_enable == 1)
-				usbnet_dump(dev, 0, urb->transfer_buffer,
-					urb->actual_length);
-			else if (usbnet_data_dump_enable == 2)
-				usbnet_dump(dev, 0, urb->transfer_buffer,
-					min(urb->actual_length,
-					usbnet_partial_dump_len));
-		}
-
-		usb_autopm_get_interface_async(dev->intf);
-		usb_autopm_put_interface_async(dev->intf);
 		break;
 
 	/* stalls need manual reset. this is rare ... except that
