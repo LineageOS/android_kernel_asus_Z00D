@@ -126,6 +126,7 @@ struct acm {
 
 	unsigned int bytes_rx, bytes_tx;		/* flow statistics */
 	unsigned int packets_rx, packets_tx;
+	struct usb_anchor delayed;			/* writes queued for a device about to be woken */
 };
 
 #define CDC_DATA_INTERFACE_TYPE	0x0a
