@@ -1726,17 +1726,12 @@ static int acm_resume(struct usb_interface *intf)
 		goto out;
 
 	if (test_bit(ASYNCB_INITIALIZED, &acm->port.flags)) {
-		rv = usb_submit_urb(acm->ctrlurb, GFP_NOIO);
+		rv = usb_submit_urb(acm->ctrlurb, GFP_ATOMIC);
 
-		spin_lock_irq(&acm->write_lock);
-		list_for_each_entry_safe(d_wb, nd_wb,
-				&acm->delayed_wb_list, list) {
-			wb = d_wb->wb;
-			list_del(&d_wb->list);
-			kfree(d_wb);
-			spin_unlock_irq(&acm->write_lock);
+		if (acm->delayed_wb) {
+			wb = acm->delayed_wb;
+			acm->delayed_wb = NULL;
 			acm_start_wb(acm, wb);
-			spin_lock_irq(&acm->write_lock);
 		}
 		spin_unlock_irq(&acm->write_lock);
 
