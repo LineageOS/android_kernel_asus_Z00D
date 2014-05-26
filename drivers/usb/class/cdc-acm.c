@@ -250,17 +250,9 @@ static int acm_write_start(struct acm *acm, int wbn)
 							acm->susp_count);
 	usb_autopm_get_interface_async(acm->control);
 	if (acm->susp_count) {
-		d_wb = kmalloc(sizeof(struct delayed_wb), GFP_ATOMIC);
-		if (d_wb == NULL) {
-			rc = -ENOMEM;
-			usb_autopm_put_interface_async(acm->control);
-		} else {
-			d_wb->wb = wb;
-			list_add_tail(&d_wb->list, &acm->delayed_wb_list);
-			rc = 0;		/* A white lie */
-		}
+		usb_anchor_urb(wb->urb, &acm->delayed);
 		spin_unlock_irqrestore(&acm->write_lock, flags);
-		return rc;
+		return 0;
 	}
 	usb_mark_last_busy(acm->dev);
 
@@ -1728,10 +1720,12 @@ static int acm_resume(struct usb_interface *intf)
 	if (test_bit(ASYNCB_INITIALIZED, &acm->port.flags)) {
 		rv = usb_submit_urb(acm->ctrlurb, GFP_ATOMIC);
 
-		if (acm->delayed_wb) {
-			wb = acm->delayed_wb;
-			acm->delayed_wb = NULL;
-			acm_start_wb(acm, wb);
+		for (;;) {
+			urb = usb_get_from_anchor(&acm->delayed);
+			if (!urb)
+				break;
+
+			acm_start_wb(acm, urb->context);
 		}
 		spin_unlock_irq(&acm->write_lock);
 
