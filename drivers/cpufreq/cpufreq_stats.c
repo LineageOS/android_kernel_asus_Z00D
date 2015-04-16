@@ -624,7 +624,6 @@ static int cpufreq_stat_notifier_policy(struct notifier_block *nb,
 
 	if (!per_cpu(cpufreq_power_stats, cpu))
 		cpufreq_powerstats_create(cpu, table, count);
-
 	ret = cpufreq_stats_create_table(policy, table, count);
 	if (ret)
 		return ret;
