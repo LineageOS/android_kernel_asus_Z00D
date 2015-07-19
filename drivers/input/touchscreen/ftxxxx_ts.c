@@ -62,6 +62,7 @@
 
 #ifdef FTS_GESTRUE
 /*zax 20140922*/
+#define KEY_GESTURE_DOUBLECLICK 256
 #define KEY_GESTURE_U		KEY_POWER
 #define KEY_GESTURE_UP		KEY_UP
 #define KEY_GESTURE_DOWN		KEY_DOWN
@@ -96,6 +97,7 @@
 #define FTS_GESTRUE_POINTS 255
 #define FTS_GESTRUE_POINTS_ONETIME 62
 #define FTS_GESTRUE_POINTS_HEADER 8
+
 #define FTS_GESTURE_OUTPUT_ADRESS 0xD3
 #define FTS_GESTURE_OUTPUT_UNIT_LENGTH 4
 
@@ -396,9 +398,9 @@ static void check_gesture(struct ftxxxx_ts_data *data, int gesture_id)
 	switch (gesture_id) {
 	/* ++++ touch gesture mode support part in ZE500CL ++++ */
 	case GESTURE_DOUBLECLICK:
-		input_report_key(data->input_dev, KEY_GESTURE_U, 1);
+		input_report_key(data->input_dev, KEY_GESTURE_DOUBLECLICK, 1);
 		input_sync(data->input_dev);
-		input_report_key(data->input_dev, KEY_GESTURE_U, 0);
+		input_report_key(data->input_dev, KEY_GESTURE_DOUBLECLICK, 0);
 		input_sync(data->input_dev);
 		break;
 	case GESTURE_V:
@@ -651,7 +653,7 @@ static int ftxxxx_read_Touchdata(struct ftxxxx_ts_data *data)
 		return ret;
 	}
 
-	/*Ft_Printf_Touchdata(data,buf);*/	/*打印报点调试信息*/
+       /*Ft_Printf_Touchdata(data,buf);*/      /*<B4><F2>印<B1><A8><B5><E3><B5><F7><CA><D4><D0><C5>息*/
 
 	memset(event, 0, sizeof(struct ts_event));
 
@@ -1654,7 +1656,7 @@ static int ftxxxx_ts_probe(struct i2c_client *client, const struct i2c_device_id
 	/* ---- touch gesture mode not support part in ZE500CL ---- */
 
 	/* ++++ touch gesture mode support part in ZE500CL ++++ */
-	input_set_capability(input_dev, EV_KEY, KEY_POWER);
+	input_set_capability(input_dev, EV_KEY, KEY_GESTURE_DOUBLECLICK);
 	input_set_capability(input_dev, EV_KEY, KEY_GESTURE_V);
 	input_set_capability(input_dev, EV_KEY, KEY_GESTURE_Z);
 	input_set_capability(input_dev, EV_KEY, KEY_GESTURE_C);
@@ -1662,7 +1664,7 @@ static int ftxxxx_ts_probe(struct i2c_client *client, const struct i2c_device_id
 	input_set_capability(input_dev, EV_KEY, KEY_GESTURE_S);
 	input_set_capability(input_dev, EV_KEY, KEY_GESTURE_W);
 
-	__set_bit(KEY_POWER, input_dev->keybit);
+	__set_bit(KEY_GESTURE_DOUBLECLICK, input_dev->keybit);
 	__set_bit(KEY_GESTURE_V, input_dev->keybit);
 	__set_bit(KEY_GESTURE_Z, input_dev->keybit);
 	__set_bit(KEY_GESTURE_C, input_dev->keybit);
