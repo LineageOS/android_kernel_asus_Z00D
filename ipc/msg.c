@@ -218,8 +218,7 @@ static int newque(struct ipc_namespace *ns, struct ipc_params *params)
 		return id;
 	}
 
-	ipc_unlock_object(&msq->q_perm);
-	rcu_read_unlock();
+	msg_unlock(msq);
 
 	return msq->q_perm.id;
 }
