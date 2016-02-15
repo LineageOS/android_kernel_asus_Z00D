@@ -178,12 +178,6 @@ static inline void tput_set_performance_mode(bool en)
 		pm_qos_update_request(&tput_pm_qos_req, PM_QOS_DEFAULT_VALUE);
 #endif
 
-	if (en)
-		boost_mode = 2;
-	else
-		boost_mode = 0;
-
-	set_cpufreq_boost(boost_mode);
 }
 
 #if 0
