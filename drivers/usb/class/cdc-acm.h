@@ -79,6 +79,11 @@ struct acm_rb {
 	struct acm		*instance;
 };
 
+struct delayed_wb {
+	struct list_head        list;
+	struct acm_wb		*wb;
+};
+
 struct acm {
 	struct usb_device *dev;				/* the corresponding usb device */
 	struct usb_interface *control;			/* control interface */
@@ -116,6 +121,10 @@ struct acm {
 	unsigned int throttled:1;			/* actually throttled */
 	unsigned int throttle_req:1;			/* throttle requested */
 	u8 bInterval;
+	struct list_head delayed_wb_list;		/* delayed wb list */
+
+	unsigned int bytes_rx, bytes_tx;		/* flow statistics */
+	unsigned int packets_rx, packets_tx;
 	struct usb_anchor delayed;			/* writes queued for a device about to be woken */
 };
 
@@ -128,3 +137,6 @@ struct acm {
 #define NOT_A_MODEM			8
 #define NO_DATA_INTERFACE		16
 #define IGNORE_DEVICE			32
+/* CloverView Comneon Modem Device Info */
+#define CTP_MODEM_VID			0x1519
+#define CTP_MODEM_PID			0x0020

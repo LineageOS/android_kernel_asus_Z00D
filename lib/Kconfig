@@ -407,4 +407,10 @@ config OID_REGISTRY
 config UCS2_STRING
         tristate
 
+config ASUS_EVT_LOG
+        boolean "ASUS event log"
+        default y
+        help
+          Provide event logging.
+
 endmenu

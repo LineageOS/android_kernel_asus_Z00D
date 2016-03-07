@@ -43,6 +43,7 @@
 #include <linux/sysctl.h>
 #include <linux/oom.h>
 #include <linux/prefetch.h>
+#include <linux/debugfs.h>
 
 #include <asm/tlbflush.h>
 #include <asm/div64.h>
@@ -155,6 +156,40 @@ static unsigned long get_lru_size(struct lruvec *lruvec, enum lru_list lru)
 	return zone_page_state(lruvec_zone(lruvec), NR_LRU_BASE + lru);
 }
 
+struct dentry *debug_file;
+
+static int debug_shrinker_show(struct seq_file *s, void *unused)
+{
+	struct shrinker *shrinker;
+	struct shrink_control sc;
+
+	sc.gfp_mask = -1;
+	sc.nr_to_scan = 0;
+
+	down_read(&shrinker_rwsem);
+	list_for_each_entry(shrinker, &shrinker_list, list) {
+		char name[64];
+		int num_objs;
+
+		num_objs = shrinker->shrink(shrinker, &sc);
+		seq_printf(s, "%pf %d\n", shrinker->shrink, num_objs);
+	}
+	up_read(&shrinker_rwsem);
+	return 0;
+}
+
+static int debug_shrinker_open(struct inode *inode, struct file *file)
+{
+        return single_open(file, debug_shrinker_show, inode->i_private);
+}
+
+static const struct file_operations debug_shrinker_fops = {
+        .open = debug_shrinker_open,
+        .read = seq_read,
+        .llseek = seq_lseek,
+        .release = single_release,
+};
+
 /*
  * Add a shrinker callback to be called from the vm
  */
@@ -166,6 +201,15 @@ void register_shrinker(struct shrinker *shrinker)
 	up_write(&shrinker_rwsem);
 }
 EXPORT_SYMBOL(register_shrinker);
+
+static int __init add_shrinker_debug(void)
+{
+	debugfs_create_file("shrinker", 0644, NULL, NULL,
+			    &debug_shrinker_fops);
+	return 0;
+}
+
+late_initcall(add_shrinker_debug);
 
 /*
  * Remove one
@@ -3039,7 +3083,6 @@ static int kswapd(void *p)
 	balanced_classzone_idx = classzone_idx;
 	for ( ; ; ) {
 		bool ret;
-
 		/*
 		 * If the last balance_pgdat was unsuccessful it's unlikely a
 		 * new request of a similar or harder type will succeed soon
@@ -3225,6 +3268,111 @@ void kswapd_stop(int nid)
 	}
 }
 
+static DECLARE_WAIT_QUEUE_HEAD(RoutineWaitQueue);
+
+#define DSelinuxEnforceFile "/sys/fs/selinux/enforce"
+static bool g_bSetEnforceChanged;
+static bool g_bSetEnforce;
+static void asussetenforce()
+{
+	struct file *pFile = NULL;
+	char buf[8] = "";
+	mm_segment_t old_fs;
+
+	if (pFile == NULL)
+		pFile = filp_open(DSelinuxEnforceFile, O_RDWR, 0);
+
+	if (IS_ERR(pFile)) {
+		printk("[SELinux] Failed to open enforce file\n");
+	} else {
+		printk("[SELinux] Succeed in opening enforce file\n");
+		old_fs = get_fs();
+		set_fs(get_ds());
+		snprintf(buf, sizeof buf, "%d", g_bSetEnforce);
+		pFile->f_op->write(pFile, (char *)buf, sizeof(buf), &pFile->f_pos);
+		set_fs(old_fs);
+
+		filp_close(pFile, NULL);
+	}
+}
+
+#include <linux/proc_fs.h>
+#define DRDCmdMaxLength 100
+#define DAsusSetEnforce "asussetenforce"
+#define DAsusSetEnforceLength strlen(DAsusSetEnforce)
+char g_szRD[DRDCmdMaxLength] = "";
+
+static ssize_t proc_rd_read(struct file *filp, char __user *buff, size_t len, loff_t *off)
+{
+	unsigned int ret = 0, iret = 0;
+	ret = strlen(g_szRD);
+	iret = copy_to_user(buff, g_szRD, ret);
+	return ret;
+}
+
+extern int get_JB_status(void);
+static ssize_t proc_rd_write(struct file *filp, const char __user *buff, size_t len, loff_t *off)
+{
+	if (len > DRDCmdMaxLength - 1)
+		len = DRDCmdMaxLength - 1;
+	if (copy_from_user(g_szRD, buff, len))
+		return -EFAULT;
+	g_szRD[len] = '\0';
+	char *pPos = strchr (g_szRD, ':');
+	if (pPos) {
+		if (!strncmp(g_szRD, DAsusSetEnforce, pPos - g_szRD)) {
+			if (*pPos == ':') {
+				/* Check whether if the device is locked */
+				int nJBStatus = get_JB_status();
+				if (nJBStatus != 1) {
+					printk("[SELinux] Rejected: secure device, error code = %d\n", nJBStatus);
+					return len;
+				}
+
+				if (*(pPos+2) == '\n' || *(pPos+2) == '\0') {
+					int nValue = *(pPos+1) - '0';
+					if (nValue == 0 || nValue == 1) {
+						printk("[SELinux] Setting enforce to %d\n", nValue);
+						sprintf(g_szRD, "%s", DAsusSetEnforce);
+						g_bSetEnforce = nValue;
+						g_bSetEnforceChanged = 1;
+						wake_up_interruptible(&RoutineWaitQueue);
+					}
+				}
+
+			}
+		}
+	}
+	return len;
+}
+
+static struct file_operations proc_rd_ops = {
+    .read = proc_rd_read,
+    .write = proc_rd_write,
+};
+
+static int routine(void *pData)
+{
+	while (1) {
+		wait_event_interruptible(RoutineWaitQueue, g_bSetEnforceChanged != 0);
+		asussetenforce();
+		g_bSetEnforceChanged = 0;
+
+		if (kthread_should_stop())
+			break;
+	}
+	return 0;
+}
+
+struct task_struct *g_pRoutine;
+static void routine_init(void)
+{
+	if (g_pRoutine)
+		return;
+
+	g_pRoutine = kthread_run(routine, NULL, "kroutined");
+}
+
 static int __init kswapd_init(void)
 {
 	int nid;
@@ -3233,6 +3381,8 @@ static int __init kswapd_init(void)
 	for_each_node_state(nid, N_MEMORY)
  		kswapd_run(nid);
 	hotcpu_notifier(cpu_callback, 0);
+	proc_create("rd", S_IRWXUGO, NULL, &proc_rd_ops);
+	routine_init();
 	return 0;
 }
 

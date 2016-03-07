@@ -40,6 +40,33 @@ void suspend_device_irqs(void)
 }
 EXPORT_SYMBOL_GPL(suspend_device_irqs);
 
+
+/* ASUS_BSP+++ "for wlan wakeup trace" */
+int wakeup_irq_flag_rx;
+int wakeup_irq_wlan;
+
+int wakeup_irq_flag_function_rx(void)
+{
+	if (wakeup_irq_flag_rx == 1) {
+		wakeup_irq_flag_rx = 0;
+		return 1;
+	}
+
+	return 0;
+}
+EXPORT_SYMBOL(wakeup_irq_flag_function_rx);
+
+
+int wakeup_irq_wlan_num(int irq_num)
+{
+	wakeup_irq_wlan = irq_num;
+	printk("[wlan]: wakeup_irq_wlan=%d.\r\n", wakeup_irq_wlan);
+	return 0;
+}
+EXPORT_SYMBOL(wakeup_irq_wlan_num);
+/* ASUS_BSP--- "for wlan wakeup trace" */
+
+
 static void resume_irqs(bool want_early)
 {
 	struct irq_desc *desc;
@@ -52,6 +79,21 @@ static void resume_irqs(bool want_early)
 
 		if (!is_early && want_early)
 			continue;
+
+#ifdef CONFIG_PM_DEBUG
+		if (desc->istate & IRQS_PENDING) {
+			printk(KERN_DEBUG "Wakeup from IRQ %d %s\n",
+				irq,
+				desc->action && desc->action->name ?
+				desc->action->name : "");
+
+			/* ASUS_BSP+++ "for wlan wakeup trace" */
+			if (irq == wakeup_irq_wlan) {
+				wakeup_irq_flag_rx = 1;
+			}
+			/* ASUS_BSP--- "for wlan wakeup trace" */
+		}
+#endif /* CONFIG_PM_DEBUG */
 
 		raw_spin_lock_irqsave(&desc->lock, flags);
 		__enable_irq(desc, irq, true);
@@ -103,14 +145,14 @@ int check_wakeup_irqs(void)
 	int irq;
 
 	for_each_irq_desc(irq, desc) {
-		/*
-		 * Only interrupts which are marked as wakeup source
-		 * and have not been disabled before the suspend check
-		 * can abort suspend.
-		 */
 		if (irqd_is_wakeup_set(&desc->irq_data)) {
-			if (desc->depth == 1 && desc->istate & IRQS_PENDING)
+			if (desc->istate & IRQS_PENDING) {
+				pr_info("Wakeup IRQ %d %s pending, suspend aborted\n",
+					irq,
+					desc->action && desc->action->name ?
+					desc->action->name : "");
 				return -EBUSY;
+			}
 			continue;
 		}
 		/*

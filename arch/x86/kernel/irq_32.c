@@ -18,6 +18,7 @@
 #include <linux/uaccess.h>
 #include <linux/percpu.h>
 #include <linux/mm.h>
+#include <linux/PMUtil.h>
 
 #include <asm/apic.h>
 
@@ -190,6 +191,10 @@ bool handle_irq(unsigned irq, struct pt_regs *regs)
 	desc = irq_to_desc(irq);
 	if (unlikely(!desc))
 		return false;
+
+	/* ZE500CL001S */
+	SetLastIRQ(irq);
+	/* ZE500CL001E */
 
 	if (user_mode_vm(regs) || !execute_on_irq_stack(overflow, desc, irq)) {
 		if (unlikely(overflow))

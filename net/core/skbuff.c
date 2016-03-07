@@ -464,13 +464,14 @@ static inline void skb_drop_fraglist(struct sk_buff *skb)
 	skb_drop_list(&skb_shinfo(skb)->frag_list);
 }
 
-static void skb_clone_fraglist(struct sk_buff *skb)
+void skb_clone_fraglist(struct sk_buff *skb)
 {
 	struct sk_buff *list;
 
 	skb_walk_frags(skb, list)
 		skb_get(list);
 }
+EXPORT_SYMBOL(skb_clone_fraglist);
 
 static void skb_free_head(struct sk_buff *skb)
 {
@@ -791,6 +792,21 @@ int skb_copy_ubufs(struct sk_buff *skb, gfp_t gfp_mask)
 		u8 *vaddr;
 		skb_frag_t *f = &skb_shinfo(skb)->frags[i];
 
+		/* Try to catch IPANIC, caused by:
+		general protection fault: 0000 [#1] [ 4108.238018] PREEMPT SMP
+		RIP: 0010:[<ffffffff82330696>]  [<ffffffff82330696>] memcpy+0x6/0x110
+		RSP: 0000:ffff88003b403d28  EFLAGS: 00010207
+		RAX: ffff88000b481000 RBX: ffffea00002d2040 RCX: 00000000b151f820
+		RDX: 00000000b151f820 RSI: 36e526a1a698a434 RDI: ffff88000b481000
+		...
+		[<ffffffff827b2f9c>] ? skb_copy_ubufs+0xcc/0x270
+		*/
+		WARN_ON(skb_frag_size(f) > 2048);
+		if (skb_frag_size(f) > 2048) {
+			printk(KERN_ERR "%s: skb frag [%d]%p:%u\n", __func__, i, skb_frag_page(f), skb_frag_size(f));
+			return -EFAULT;
+		}
+
 		page = alloc_page(gfp_mask);
 		if (!page) {
 			while (head) {
@@ -882,7 +898,7 @@ static void skb_headers_offset_update(struct sk_buff *skb, int off)
 	skb->inner_mac_header += off;
 }
 
-static void copy_skb_header(struct sk_buff *new, const struct sk_buff *old)
+void copy_skb_header(struct sk_buff *new, const struct sk_buff *old)
 {
 #ifndef NET_SKBUFF_DATA_USES_OFFSET
 	/*
@@ -900,6 +916,7 @@ static void copy_skb_header(struct sk_buff *new, const struct sk_buff *old)
 	skb_shinfo(new)->gso_segs = skb_shinfo(old)->gso_segs;
 	skb_shinfo(new)->gso_type = skb_shinfo(old)->gso_type;
 }
+EXPORT_SYMBOL(copy_skb_header);
 
 static inline int skb_alloc_rx_flag(const struct sk_buff *skb)
 {

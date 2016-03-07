@@ -2131,7 +2131,7 @@ static int validate_chain(struct task_struct *curr, struct lockdep_map *lock,
 		graph_unlock();
 	} else
 		/* after lookup_chain_cache(): */
-		if (unlikely(!debug_locks))
+		if (likely(!debug_locks))
 			return 0;
 
 	return 1;
@@ -2719,7 +2719,7 @@ static void __lockdep_trace_alloc(gfp_t gfp_mask, unsigned long flags)
 {
 	struct task_struct *curr = current;
 
-	if (unlikely(!debug_locks))
+	if (likely(!debug_locks))
 		return;
 
 	/* no reclaim without waiting on it */
@@ -2989,7 +2989,7 @@ void lockdep_init_map(struct lockdep_map *lock, const char *name,
 	}
 	lock->key = key;
 
-	if (unlikely(!debug_locks))
+	if (likely(!debug_locks))
 		return;
 
 	if (subclass)
@@ -3056,7 +3056,7 @@ static int __lock_acquire(struct lockdep_map *lock, unsigned int subclass,
 	if (!prove_locking)
 		check = 1;
 
-	if (unlikely(!debug_locks))
+	if (likely(!debug_locks))
 		return 0;
 
 	/*
@@ -3244,7 +3244,7 @@ print_unlock_imbalance_bug(struct task_struct *curr, struct lockdep_map *lock,
 static int check_unlock(struct task_struct *curr, struct lockdep_map *lock,
 			unsigned long ip)
 {
-	if (unlikely(!debug_locks))
+	if (likely(!debug_locks))
 		return 0;
 	/*
 	 * Lockdep should run with IRQs disabled, recursion, head-ache, etc..
@@ -3590,6 +3590,9 @@ void lock_acquire(struct lockdep_map *lock, unsigned int subclass,
 {
 	unsigned long flags;
 
+	if (likely(!debug_locks))
+		return;
+
 	if (unlikely(current->lockdep_recursion))
 		return;
 
@@ -3609,6 +3612,9 @@ void lock_release(struct lockdep_map *lock, int nested,
 			  unsigned long ip)
 {
 	unsigned long flags;
+
+	if (likely(!debug_locks))
+		return;
 
 	if (unlikely(current->lockdep_recursion))
 		return;
@@ -4072,7 +4078,7 @@ void debug_check_no_locks_freed(const void *mem_from, unsigned long mem_len)
 	unsigned long flags;
 	int i;
 
-	if (unlikely(!debug_locks))
+	if (likely(!debug_locks))
 		return;
 
 	local_irq_save(flags);
@@ -4090,7 +4096,7 @@ void debug_check_no_locks_freed(const void *mem_from, unsigned long mem_len)
 }
 EXPORT_SYMBOL_GPL(debug_check_no_locks_freed);
 
-static void print_held_locks_bug(struct task_struct *curr)
+static void print_held_locks_bug(void)
 {
 	if (!debug_locks_off())
 		return;
@@ -4099,22 +4105,21 @@ static void print_held_locks_bug(struct task_struct *curr)
 
 	printk("\n");
 	printk("=====================================\n");
-	printk("[ BUG: lock held at task exit time! ]\n");
+	printk("[ BUG: %s/%d still has locks held! ]\n",
+	       current->comm, task_pid_nr(current));
 	print_kernel_ident();
 	printk("-------------------------------------\n");
-	printk("%s/%d is exiting with locks still held!\n",
-		curr->comm, task_pid_nr(curr));
-	lockdep_print_held_locks(curr);
-
+	lockdep_print_held_locks(current);
 	printk("\nstack backtrace:\n");
 	dump_stack();
 }
 
-void debug_check_no_locks_held(struct task_struct *task)
+void debug_check_no_locks_held(void)
 {
-	if (unlikely(task->lockdep_depth > 0))
-		print_held_locks_bug(task);
+	if (unlikely(current->lockdep_depth > 0))
+		print_held_locks_bug();
 }
+EXPORT_SYMBOL_GPL(debug_check_no_locks_held);
 
 void debug_show_all_locks(void)
 {
@@ -4122,7 +4127,7 @@ void debug_show_all_locks(void)
 	int count = 10;
 	int unlock = 1;
 
-	if (unlikely(!debug_locks)) {
+	if (likely(!debug_locks)) {
 		printk("INFO: lockdep is turned off.\n");
 		return;
 	}
@@ -4180,7 +4185,7 @@ EXPORT_SYMBOL_GPL(debug_show_all_locks);
  */
 void debug_show_held_locks(struct task_struct *task)
 {
-	if (unlikely(!debug_locks)) {
+	if (likely(!debug_locks)) {
 		printk("INFO: lockdep is turned off.\n");
 		return;
 	}

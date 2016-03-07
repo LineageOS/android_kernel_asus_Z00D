@@ -522,7 +522,7 @@ static void do_thaw_one(struct super_block *sb, void *unused)
 {
 	char b[BDEVNAME_SIZE];
 	while (sb->s_bdev && !thaw_bdev(sb->s_bdev, sb))
-		printk(KERN_WARNING "Emergency Thaw on %s\n",
+		printk_ratelimited(KERN_WARNING "Emergency Thaw on %s\n",
 		       bdevname(sb->s_bdev, b));
 }
 
@@ -1056,6 +1056,9 @@ grow_buffers(struct block_device *bdev, sector_t block, int size)
 static struct buffer_head *
 __getblk_slow(struct block_device *bdev, sector_t block, int size)
 {
+	int ret;
+	struct buffer_head *bh;
+
 	/* Size must be multiple of hard sectorsize */
 	if (unlikely(size & (bdev_logical_block_size(bdev)-1) ||
 			(size < 512 || size > PAGE_SIZE))) {
@@ -1068,20 +1071,21 @@ __getblk_slow(struct block_device *bdev, sector_t block, int size)
 		return NULL;
 	}
 
-	for (;;) {
-		struct buffer_head *bh;
-		int ret;
+retry:
+	bh = __find_get_block(bdev, block, size);
+	if (bh)
+		return bh;
 
+	ret = grow_buffers(bdev, block, size);
+	if (ret == 0) {
+		free_more_memory();
+		goto retry;
+	} else if (ret > 0) {
 		bh = __find_get_block(bdev, block, size);
 		if (bh)
 			return bh;
-
-		ret = grow_buffers(bdev, block, size);
-		if (ret < 0)
-			return NULL;
-		if (ret == 0)
-			free_more_memory();
 	}
+	return NULL;
 }
 
 /*

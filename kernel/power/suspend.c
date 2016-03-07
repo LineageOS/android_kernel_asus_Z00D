@@ -25,11 +25,53 @@
 #include <linux/suspend.h>
 #include <linux/syscore_ops.h>
 #include <linux/ftrace.h>
+#include <linux/rtc.h>
+#include <linux/workqueue.h>
 #include <trace/events/power.h>
 
 #include "power.h"
 
+static void do_suspend_sync(struct work_struct *work);
+
+/* ZE500CL001S */
+#include <linux/timer.h>
+#include <linux/PMUtil.h>
+#include <linux/wakelock.h>
+
+extern struct timer_list check_wakeup_source_timer;
+extern unsigned long print_period;
+ktime_t wakeup_starttime;
+
+int pmsp_flag;
+bool g_resume_status;
+
+/* Add a timer to trigger wakelock debug */
+extern void print_active_locks(void);
+void unattended_timer_expired(unsigned long data);
+DEFINE_TIMER(unattended_timer, unattended_timer_expired, 0, 0);
+
+void unattended_timer_expired(unsigned long data)
+{
+	if (g_nASUSEvtLogWakelockPrintTimes >= DASUSEvtLogWakelockPrintTimesLimit)
+		return;
+
+	pr_info("[PM] unattended_timer_expired\n");
+	/* +++ Fixed format for log parser, DO NOT MODIFY +++ */
+	ASUSEvtlog("[PM]unattended_timer_expired\n");
+	/* --- Fixed format for log parser, DO NOT MODIFY --- */
+	pmsp_flag = 1;
+	print_active_locks();
+	mod_timer(&unattended_timer, jiffies + msecs_to_jiffies(PM_UNATTENDED_TIMEOUT));
+	/* [ASUS BSP] Cheryl Chen - PF450CL013S - Constrain the Log Number of Active Wake Lock in ASUSEvtLog */
+	g_nASUSEvtLogWakelockPrintTimes++;
+	/* [ASUS BSP] Cheryl Chen - PF450CL013E */
+}
+/* ZE500CL001E */
+
 struct pm_sleep_state pm_states[PM_SUSPEND_MAX] = {
+#ifdef CONFIG_EARLYSUSPEND
+	[PM_SUSPEND_ON] = { .label = "on", },
+#endif
 	[PM_SUSPEND_FREEZE] = { .label = "freeze", .state = PM_SUSPEND_FREEZE },
 	[PM_SUSPEND_STANDBY] = { .label = "standby", },
 	[PM_SUSPEND_MEM] = { .label = "mem", },
@@ -41,6 +83,9 @@ static bool need_suspend_ops(suspend_state_t state)
 {
 	return !!(state > PM_SUSPEND_FREEZE);
 }
+
+static DECLARE_WORK(suspend_sync_work, do_suspend_sync);
+static DECLARE_COMPLETION(suspend_sync_complete);
 
 static DECLARE_WAIT_QUEUE_HEAD(suspend_freeze_wait_head);
 static bool suspend_freeze_wake;
@@ -61,6 +106,42 @@ void freeze_wake(void)
 	wake_up(&suspend_freeze_wait_head);
 }
 EXPORT_SYMBOL_GPL(freeze_wake);
+
+static void do_suspend_sync(struct work_struct *work)
+{
+	sys_sync();
+	complete(&suspend_sync_complete);
+}
+
+static bool check_sys_sync(void)
+{
+	while (!wait_for_completion_timeout(&suspend_sync_complete,
+		HZ / 5)) {
+		if (pm_wakeup_pending())
+			return false;
+		/* If sys_sync is doing, and no wakeup pending,
+		 * we can try in loop to wait sys_sync() finish.
+		 */
+	}
+
+	return true;
+}
+
+static bool suspend_sync(void)
+{
+	if (work_busy(&suspend_sync_work)) {
+		/* When last sys_sync() work is still running,
+		 * we need wait for it to be finished.
+		 */
+		if (!check_sys_sync())
+			return false;
+	}
+
+	INIT_COMPLETION(suspend_sync_complete);
+	schedule_work(&suspend_sync_work);
+
+	return check_sys_sync();
+}
 
 static bool valid_state(suspend_state_t state)
 {
@@ -115,6 +196,7 @@ static int suspend_test(int level)
 	return 0;
 }
 
+extern int g_keycheck_abort;
 /**
  * suspend_prepare - Prepare for entering system sleep state.
  *
@@ -135,6 +217,7 @@ static int suspend_prepare(suspend_state_t state)
 	if (error)
 		goto Finish;
 
+	g_keycheck_abort = 0;
 	error = suspend_freeze_processes();
 	if (!error)
 		return 0;
@@ -178,7 +261,8 @@ static int suspend_enter(suspend_state_t state, bool *wakeup)
 
 	error = dpm_suspend_end(PMSG_SUSPEND);
 	if (error) {
-		printk(KERN_ERR "PM: Some devices failed to power down\n");
+		printk(KERN_ERR "[PM] Some devices failed to power down\n");
+		ASUSEvtlog("[PM] Some devices failed to power down\n");
 		goto Platform_finish;
 	}
 
@@ -208,6 +292,14 @@ static int suspend_enter(suspend_state_t state, bool *wakeup)
 
 	arch_suspend_disable_irqs();
 	BUG_ON(!irqs_disabled());
+
+	/* ZE500CL001S */
+	static unsigned long suspend_resume_count;
+	suspend_resume_count++;
+	pr_info("[PM] Suspend/Resume Count: %ld\n", suspend_resume_count);
+	if (suspend_resume_count >= (1 << 30))
+		suspend_resume_count = 0;
+	/* ZE500CL001E */
 
 	error = syscore_suspend();
 	if (!error) {
@@ -261,7 +353,8 @@ int suspend_devices_and_enter(suspend_state_t state)
 	suspend_test_start();
 	error = dpm_suspend_start(PMSG_SUSPEND);
 	if (error) {
-		printk(KERN_ERR "PM: Some devices failed to suspend\n");
+		printk(KERN_ERR "[PM] Some devices failed to suspend\n");
+		ASUSEvtlog("[PM] Some devices failed to suspend\n");
 		goto Recover_platform;
 	}
 	suspend_test_finish("suspend devices");
@@ -333,11 +426,15 @@ static int enter_state(suspend_state_t state)
 	if (state == PM_SUSPEND_FREEZE)
 		freeze_begin();
 
-	printk(KERN_INFO "PM: Syncing filesystems ... ");
-	sys_sync();
+	printk(KERN_INFO "[PM] Syncing filesystems ... ");
+	if (!suspend_sync()) {
+		printk(KERN_INFO "[PM] Suspend aborted for filesystem syncing\n");
+		error = -EBUSY;
+		goto Unlock;
+	}
 	printk("done.\n");
 
-	pr_debug("PM: Preparing system for %s sleep\n", pm_states[state].label);
+	pr_debug("[PM] Preparing system for %s sleep\n", pm_states[state].label);
 	error = suspend_prepare(state);
 	if (error)
 		goto Unlock;
@@ -345,18 +442,36 @@ static int enter_state(suspend_state_t state)
 	if (suspend_test(TEST_FREEZER))
 		goto Finish;
 
-	pr_debug("PM: Entering %s sleep\n", pm_states[state].label);
+	pr_debug("[PM] Entering %s sleep\n", pm_states[state].label);
 	pm_restrict_gfp_mask();
 	error = suspend_devices_and_enter(state);
 	pm_restore_gfp_mask();
 
  Finish:
-	pr_debug("PM: Finishing wakeup.\n");
+	pr_debug("[PM] Finishing wakeup.\n");
 	suspend_finish();
  Unlock:
 	mutex_unlock(&pm_mutex);
 	return error;
 }
+
+static void pm_suspend_marker(char *annotation)
+{
+	struct timespec ts;
+	struct rtc_time tm;
+
+	getnstimeofday(&ts);
+	rtc_time_to_tm(ts.tv_sec, &tm);
+	pr_info("[PM] suspend %s %d-%02d-%02d %02d:%02d:%02d.%09lu UTC\n",
+		annotation, tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday,
+		tm.tm_hour, tm.tm_min, tm.tm_sec, ts.tv_nsec);
+}
+
+/* ASUS_BSP+++ LandiceFu "[ZE500CL][USBH][NA][Spec] Register early suspend notification for none mode switch" */
+#ifdef CONFIG_ZE500CL
+extern void asus_otg_host_power_off(void);
+#endif
+/* ASUS_BSP--- LandiceFu "[ZE500CL][USBH][NA][Spec] Register early suspend notification for none mode switch" */
 
 /**
  * pm_suspend - Externally visible function for suspending the system.
@@ -372,6 +487,13 @@ int pm_suspend(suspend_state_t state)
 	if (state <= PM_SUSPEND_ON || state >= PM_SUSPEND_MAX)
 		return -EINVAL;
 
+/* ASUS_BSP+++ LandiceFu "[ZE500CL][USBH][NA][Spec] Register early suspend notification for none mode switch" */
+#ifdef CONFIG_ZE500CL
+	asus_otg_host_power_off();
+#endif
+/* ASUS_BSP--- LandiceFu "[ZE500CL][USBH][NA][Spec] Register early suspend notification for none mode switch" */
+
+	pm_suspend_marker("entry");
 	error = enter_state(state);
 	if (error) {
 		suspend_stats.fail++;
@@ -379,6 +501,7 @@ int pm_suspend(suspend_state_t state)
 	} else {
 		suspend_stats.success++;
 	}
+	pm_suspend_marker("exit");
 	return error;
 }
 EXPORT_SYMBOL(pm_suspend);

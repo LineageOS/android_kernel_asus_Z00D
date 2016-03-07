@@ -1894,6 +1894,9 @@ void device_shutdown(void)
 		pm_runtime_get_noresume(dev);
 		pm_runtime_barrier(dev);
 
+		/* Cheryl Chen - PF450CLCMTS - This is only for the development stage, should be mute when the system is stable */
+		printk("[PM] device_shutdown: Device Name - %s.\n", dev_driver_string(dev));
+
 		if (dev->bus && dev->bus->shutdown) {
 			if (initcall_debug)
 				dev_info(dev, "shutdown\n");

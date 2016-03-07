@@ -18,6 +18,21 @@
 
 #include "power.h"
 
+/* ZE500CL001S */
+#include <linux/PMUtil.h>
+void print_active_locks(void);
+extern bool g_resume_status;
+extern void print_pm_wakeup_source(void);
+
+unsigned int g_nASUSEvtLogWakelockPrintTimes;
+unsigned long print_period = WAIT_FOR_PRINT_WAKEUP_SOURCE;
+void check_wakeup_source_timer_expired(unsigned long);
+DEFINE_TIMER(check_wakeup_source_timer, check_wakeup_source_timer_expired, 0, 0);
+
+extern int pmsp_flag;
+extern void pmsp_print(void);
+/* ZE500CL001E */
+
 /*
  * If set, the suspend/hibernate code will abort transitions to a sleep state
  * if wakeup events are registered during or immediately before the transition.
@@ -668,8 +683,13 @@ static void print_active_wakeup_sources(void)
 	rcu_read_lock();
 	list_for_each_entry_rcu(ws, &wakeup_sources, entry) {
 		if (ws->active) {
-			pr_info("active wakeup source: %s\n", ws->name);
+			/* ZE500CL001S */
+			pr_info("[PM] Active wakeup source: %s\n", ws->name);
 			active = 1;
+
+			if (strncmp(ws->name, "PowerManagerService", strlen("PowerManagerService")) == 0)
+				print_pm_wakeup_source();
+			/* ZE500CL001E */
 		} else if (!active &&
 			   (!last_activity_ws ||
 			    ktime_to_ns(ws->last_time) >
@@ -738,7 +758,13 @@ bool pm_get_wakeup_count(unsigned int *count, bool block)
 			split_counters(&cnt, &inpr);
 			if (inpr == 0 || signal_pending(current))
 				break;
-
+			/* ZE500CL001S */
+			if (!g_resume_status) {
+				printk("[PM] Try to suspend wakelock\n");
+				ASUSEvtlog("[PM] Try to suspend wakelock\n");
+				print_active_locks();
+			}
+			/* ZE500CL001E */
 			schedule();
 		}
 		finish_wait(&wakeup_count_wait_queue, &wait);
@@ -896,3 +922,55 @@ static int __init wakeup_sources_debugfs_init(void)
 }
 
 postcore_initcall(wakeup_sources_debugfs_init);
+
+/* ZE500CL001S */
+void check_wakeup_source_timer_expired(unsigned long data)
+{
+	print_active_wakeup_sources();
+
+	if (!timer_pending(&check_wakeup_source_timer)) {
+		printk("[PM] check_wakeup_source_timer_expired, next printer will trigger in %ld seconds\n", print_period/1000);
+		mod_timer(&check_wakeup_source_timer, jiffies + msecs_to_jiffies(print_period));
+		if (print_period * 2 < 1000 * 60 * 60)
+			print_period *= 2;
+		else
+			print_period = 1000 * 60 * 60;
+	} else {
+		printk("[PM] Another check_wakeup_source_timer is running\n");
+	}
+}
+
+void print_active_locks(void)
+{
+	struct wakeup_source *ws;
+	int wl_active_cnt = 0;
+
+	/*rcu_read_lock();*/
+	list_for_each_entry_rcu(ws, &wakeup_sources, entry)
+		if (ws->active) {
+			wl_active_cnt++;
+			printk("[PM] Active wake lock %s\n", ws->name);
+			/* [ASUS BSP] Cheryl Chen - PF450CL013S - Constrain the Log Number of Active Wake Lock in ASUSEvtLog */
+			if (g_nASUSEvtLogWakelockPrintTimes < DASUSEvtLogWakelockPrintTimesLimit) {
+				/* +++ Fixed format for log parser, DO NOT MODIFY +++ */
+				ASUSEvtlog("[PM] active wake lock: %s\n", ws->name);
+				/* --- Fixed format for log parser, DO NOT MODIFY --- */
+			}
+			/* [ASUS BSP] Cheryl Chen - PF450CL013E */
+			if (pmsp_flag == 1) {
+				if (strncmp(ws->name, "PowerManagerService", strlen("PowerManagerService")) == 0)
+					pmsp_print();
+			}
+			pmsp_flag = 0;
+		}
+
+	if (wl_active_cnt == 0) {
+		printk("[PM] All wakelock are inactive\n");
+		ASUSEvtlog("[PM] All wakelock are inactive\n");
+	}
+
+	/*rcu_read_unlock();*/
+	return;
+}
+EXPORT_SYMBOL(print_active_locks);
+/* ZE500CL001E */

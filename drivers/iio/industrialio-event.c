@@ -35,6 +35,7 @@
  */
 struct iio_event_interface {
 	wait_queue_head_t	wait;
+	struct mutex		read_lock;
 	DECLARE_KFIFO(det_events, struct iio_event_data, 16);
 
 	struct list_head	dev_attr_list;
@@ -97,14 +98,16 @@ static ssize_t iio_event_chrdev_read(struct file *filep,
 	if (count < sizeof(struct iio_event_data))
 		return -EINVAL;
 
-	spin_lock_irq(&ev_int->wait.lock);
+	if (mutex_lock_interruptible(&ev_int->read_lock))
+		return -ERESTARTSYS;
+
 	if (kfifo_is_empty(&ev_int->det_events)) {
 		if (filep->f_flags & O_NONBLOCK) {
 			ret = -EAGAIN;
 			goto error_unlock;
 		}
 		/* Blocking on device; waiting for something to be there */
-		ret = wait_event_interruptible_locked_irq(ev_int->wait,
+		ret = wait_event_interruptible(ev_int->wait,
 					!kfifo_is_empty(&ev_int->det_events));
 		if (ret)
 			goto error_unlock;
@@ -114,7 +117,7 @@ static ssize_t iio_event_chrdev_read(struct file *filep,
 	ret = kfifo_to_user(&ev_int->det_events, buf, count, &copied);
 
 error_unlock:
-	spin_unlock_irq(&ev_int->wait.lock);
+	mutex_unlock(&ev_int->read_lock);
 
 	return ret ? ret : copied;
 }
@@ -182,6 +185,21 @@ static const char * const iio_ev_dir_text[] = {
 	[IIO_EV_DIR_FALLING] = "falling"
 };
 
+static enum iio_event_direction iio_ev_attr_dir(struct iio_dev_attr *attr)
+{
+	return attr->c->event_spec[attr->address & 0xffff].dir;
+}
+
+static enum iio_event_type iio_ev_attr_type(struct iio_dev_attr *attr)
+{
+	return attr->c->event_spec[attr->address & 0xffff].type;
+}
+
+static enum iio_event_info iio_ev_attr_info(struct iio_dev_attr *attr)
+{
+	return (attr->address >> 16) & 0xffff;
+}
+
 static ssize_t iio_ev_state_store(struct device *dev,
 				  struct device_attribute *attr,
 				  const char *buf,
@@ -223,14 +241,16 @@ static ssize_t iio_ev_value_show(struct device *dev,
 {
 	struct iio_dev *indio_dev = dev_to_iio_dev(dev);
 	struct iio_dev_attr *this_attr = to_iio_dev_attr(attr);
-	int val, ret;
+	int val, val2;
+	int ret;
 
 	ret = indio_dev->info->read_event_value(indio_dev,
-						this_attr->address, &val);
+		this_attr->c, iio_ev_attr_type(this_attr),
+		iio_ev_attr_dir(this_attr), iio_ev_attr_info(this_attr),
+		&val, &val2);
 	if (ret < 0)
 		return ret;
-
-	return sprintf(buf, "%d\n", val);
+	return iio_format_value(buf, ret, val, val2);
 }
 
 static ssize_t iio_ev_value_store(struct device *dev,
@@ -240,18 +260,19 @@ static ssize_t iio_ev_value_store(struct device *dev,
 {
 	struct iio_dev *indio_dev = dev_to_iio_dev(dev);
 	struct iio_dev_attr *this_attr = to_iio_dev_attr(attr);
-	int val;
+	int val, val2;
 	int ret;
 
 	if (!indio_dev->info->write_event_value)
 		return -EINVAL;
 
-	ret = kstrtoint(buf, 10, &val);
+	ret = iio_str_to_fixpoint(buf, 100000, &val, &val2);
 	if (ret)
 		return ret;
-
-	ret = indio_dev->info->write_event_value(indio_dev, this_attr->address,
-						 val);
+	ret = indio_dev->info->write_event_value(indio_dev,
+		this_attr->c, iio_ev_attr_type(this_attr),
+		iio_ev_attr_dir(this_attr), iio_ev_attr_info(this_attr),
+		val, val2);
 	if (ret < 0)
 		return ret;
 
@@ -371,6 +392,7 @@ static void iio_setup_ev_int(struct iio_event_interface *ev_int)
 {
 	INIT_KFIFO(ev_int->det_events);
 	init_waitqueue_head(&ev_int->wait);
+	mutex_init(&ev_int->read_lock);
 }
 
 static const char *iio_event_group_name = "events";
@@ -434,6 +456,7 @@ int iio_device_register_eventset(struct iio_dev *indio_dev)
 
 error_free_setup_event_lines:
 	__iio_remove_event_config_attrs(indio_dev);
+	mutex_destroy(&indio_dev->event_interface->read_lock);
 	kfree(indio_dev->event_interface);
 error_ret:
 
@@ -446,5 +469,6 @@ void iio_device_unregister_eventset(struct iio_dev *indio_dev)
 		return;
 	__iio_remove_event_config_attrs(indio_dev);
 	kfree(indio_dev->event_interface->group.attrs);
+	mutex_destroy(&indio_dev->event_interface->read_lock);
 	kfree(indio_dev->event_interface);
 }

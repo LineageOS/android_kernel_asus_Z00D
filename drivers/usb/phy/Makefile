@@ -5,6 +5,7 @@
 ccflags-$(CONFIG_USB_DEBUG) := -DDEBUG
 
 obj-$(CONFIG_USB_PHY)			+= phy.o
+obj-$(CONFIG_USB_OTG_WAKELOCK)		+= otg-wakelock.o
 
 # transceiver drivers, keep the list sorted
 
@@ -28,6 +29,13 @@ obj-$(CONFIG_USB_ISP1301)		+= phy-isp1301.o
 obj-$(CONFIG_USB_MSM_OTG)		+= phy-msm-usb.o
 obj-$(CONFIG_USB_MV_OTG)		+= phy-mv-usb.o
 obj-$(CONFIG_USB_MXS_PHY)		+= phy-mxs-usb.o
+# ASUS_BSP+++ LandiceFu "[ZE500CL][USBH][porting] Separate original OTG driver with the one dedicated for padfone"
+ifdef CONFIG_ZE500CL
+obj-$(CONFIG_USB_PENWELL_OTG)		+= penwell_otg-padfone.o
+else
+obj-$(CONFIG_USB_PENWELL_OTG)		+= penwell_otg.o
+endif
+# ASUS_BSP--- LandiceFu "[ZE500CL][USBH][porting] Separate original OTG driver with the one dedicated for padfone"
 obj-$(CONFIG_USB_RCAR_PHY)		+= phy-rcar-usb.o
 obj-$(CONFIG_USB_ULPI)			+= phy-ulpi.o
 obj-$(CONFIG_USB_ULPI_VIEWPORT)		+= phy-ulpi-viewport.o

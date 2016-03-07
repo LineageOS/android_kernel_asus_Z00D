@@ -9,6 +9,11 @@
 #include <linux/freezer.h>
 #include <asm/errno.h>
 
+/* ZE500CL001S */
+#define WAIT_FOR_PRINT_WAKEUP_SOURCE	1000*10 		/* 10 secs */
+#define PM_UNATTENDED_TIMEOUT			1000*60*10		/* 10 mins */
+/* ZE500CL001E */
+
 #ifdef CONFIG_VT
 extern void pm_set_vt_switch(int);
 #else

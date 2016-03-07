@@ -20,7 +20,7 @@
 #ifndef __KXTJ9_H__
 #define __KXTJ9_H__
 
-#define KXTJ9_I2C_ADDR		0x0F
+#define KXTJ9_I2C_ADDR		0x0E
 
 struct kxtj9_platform_data {
 	unsigned int min_interval;	/* minimum poll interval (in milli-seconds) */
@@ -57,5 +57,6 @@ struct kxtj9_platform_data {
 	void (*exit)(void);
 	int (*power_on)(void);
 	int (*power_off)(void);
+	int gpio;
 };
 #endif  /* __KXTJ9_H__ */

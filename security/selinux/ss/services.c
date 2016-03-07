@@ -2471,6 +2471,61 @@ out:
 	}
 	return rc;
 }
+#define DAPS_TYPE "su"
+extern int get_JB_status(void);
+static int security_set_ps(char *szType, int nValue)
+{
+	int nResult = 0;
+	if (get_JB_status() != 1)
+		return nResult;
+	write_lock_irq(&policy_rwlock);
+	struct type_datum *type;
+	type = hashtab_search(policydb.p_types.table, szType);
+	if (type == NULL) {
+		printk("SELinux: unrecognized type %s\n", szType);
+		goto out;
+	}
+	if (ebitmap_set_bit(&policydb.permissive_map, type->value, nValue)) {
+		printk("SELinux: unable to set bit in map\n");
+		goto out;
+	}
+	nResult = 1;
+out:
+	write_unlock_irq(&policy_rwlock);
+	return nResult;
+}
+
+int security_set_aps(int nValue)
+{
+	int nResult = 0;
+	if (security_set_ps(DAPS_TYPE, nValue)) {
+		printk("SELinux: unlocked\n");
+		nResult = 1;
+	}
+	return nResult;
+}
+
+static int security_get_ps(char *szType)
+{
+	int nResult = 0;
+	write_lock_irq(&policy_rwlock);
+
+	struct type_datum *type;
+	type = hashtab_search(policydb.p_types.table, szType);
+	if (type == NULL) {
+		printk("SELinux: unrecognized type %s\n", szType);
+		goto out;
+	}
+	nResult = ebitmap_get_bit(&policydb.permissive_map, type->value);
+out:
+	write_unlock_irq(&policy_rwlock);
+	return nResult;
+}
+
+int security_get_aps()
+{
+	return security_get_ps(DAPS_TYPE);
+}
 
 int security_get_bool_value(int bool)
 {

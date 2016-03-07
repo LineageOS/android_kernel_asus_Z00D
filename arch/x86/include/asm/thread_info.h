@@ -41,6 +41,9 @@ struct thread_info {
 #endif
 	unsigned int		sig_on_uaccess_error:1;
 	unsigned int		uaccess_err:1;	/* uaccess failed */
+	struct mutex* pWaitingMutex;//ASUS_BSP + [thomas]Add for slow log
+	struct completion *pWaitingCompletion;//ASUS_BSP + [thomas]Add for slow log
+	struct rt_mutex* pWaitingRTMutex;//ASUS_BSP + [thomas]Add for slow log	
 };
 
 #define INIT_THREAD_INFO(tsk)			\

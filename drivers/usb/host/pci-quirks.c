@@ -18,7 +18,7 @@
 #include <linux/acpi.h>
 #include <linux/dmi.h>
 #include "pci-quirks.h"
-#include "xhci-ext-caps.h"
+#include "xhci.h"
 
 
 #define UHCI_USBLEGSUP		0xc0		/* legacy support */
@@ -313,6 +313,36 @@ void usb_amd_quirk_pll_disable(void)
 	usb_amd_quirk_pll(1);
 }
 EXPORT_SYMBOL_GPL(usb_amd_quirk_pll_disable);
+
+/* usb_quirk_ignore_comp_plc - If ignore PLC event for
+ * compliance/loopback mode transition.
+ * @ptr: base address of PORTSC egisters to be read.
+ * @ports: number of ports.
+ *
+ * Some xHC controller will generate PLC event when link transfer to
+ * compliance/loopback mode. By design, driver will trigger warm reset
+ * for this case which will interrupt USB3 electronic compliance test.
+ * So if want to avoid it, need to set XHCI_COMP_PLC_QUIRK during driver
+ * initialization.
+ **/
+int usb_quirk_ignore_comp_plc(void __iomem *ptr, int ports)
+{
+	int i;
+	u32 val;
+	__le32 __iomem *addr;
+
+	addr = ptr;
+	for (i = 0; i < ports; i++) {
+		val = readl(addr);
+		if (((val & PORT_PLC) && (val & PORT_PLS_MASK) == XDEV_COMP) ||
+			((val & PORT_PLC) && (val & PORT_PLS_MASK) == XDEV_LOOPBACK))
+			return 1;
+		addr += NUM_PORT_REGS;
+	}
+
+	return 0;
+}
+EXPORT_SYMBOL_GPL(usb_quirk_ignore_comp_plc);
 
 void usb_amd_quirk_pll_enable(void)
 {
@@ -967,6 +997,61 @@ hc_init:
 	}
 
 	iounmap(base);
+}
+
+/* PCI Quirks for Intel MOFD OTG3 controller
+ *
+ * For FS device connection, there have some noise after D+ drive stage.
+ * The USB PHY treat the noise as chirp J which actually haven't get the
+ * chirp J target defined in USB spec (D+ - D- > 300mv). Then controller
+ * trying to do HS negotiation, finally get FS device disconnect after port
+ * reset.
+ *
+ * This is UTMI PHY bug which violate spec for detect chirp J.
+ *
+ * The WA is set UTMI PHY register to avoid the noise.
+ *
+ **/
+#define USB2_COMPBG_ADDR 0xf90b1110
+#define USB2_COMPBG_HSSQREFBEN(x)	((x & 0x3) << 11)
+#define USB2_COMPBG_HSSQREFEN(x)	((x & 0x3) << 13)
+#define USB2_COMPBG_HSSQREFEN_MASK	(0x3 << 13)
+#define USB2_COMPBG_HSSQREFBEN_MASK	(0x3 << 11)
+static void __iomem *usb2_compbg;
+int quirk_intel_xhci_pr_init(bool init)
+{
+
+	if (init) {
+		usb2_compbg = ioremap_nocache(USB2_COMPBG_ADDR, 4);
+		if (!usb2_compbg)
+			return -ENOMEM;
+	} else
+		iounmap(usb2_compbg);
+
+	return 0;
+}
+
+int quirk_intel_xhci_port_reset(struct device *dev, bool post)
+{
+	u32 val;
+	static u32 original_val;
+
+	if (!usb2_compbg)
+		return -ENOMEM;
+
+	if (!post) {
+		dev_warn(dev, "Enable UTMI PHY FS WA\n");
+		val = readl(usb2_compbg);
+		original_val = val;
+		val &= ~(USB2_COMPBG_HSSQREFEN_MASK | USB2_COMPBG_HSSQREFBEN_MASK);
+		val |= USB2_COMPBG_HSSQREFEN(3) | USB2_COMPBG_HSSQREFBEN(1);
+		writel(val, usb2_compbg);
+	} else {
+		dev_warn(dev, "Disable UTMI PHY FS WA\n");
+		writel(original_val, usb2_compbg);
+	}
+
+	return 0;
 }
 
 static void quirk_usb_early_handoff(struct pci_dev *pdev)

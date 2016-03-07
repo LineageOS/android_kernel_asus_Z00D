@@ -704,6 +704,9 @@ const char *v4l2_ctrl_get_name(u32 id)
 	/* Keep the order of the 'case's the same as in videodev2.h! */
 	case V4L2_CID_CAMERA_CLASS:		return "Camera Controls";
 	case V4L2_CID_EXPOSURE_AUTO:		return "Auto Exposure";
+	case V4L2_CID_HILIGHT_MODE:	return "Hilight mode, Charge binning";/*ASUS_BSP PJ "add lowlight mode control binning weight interface"*/
+	case V4L2_CID_SET_DPC:	return "DPC  Controls";/*ASUS_BSP PJ "add control DPC interface"*/
+	case V4L2_CID_SET_DRAKMODE:	return "Dark Mode  Controls";/*ASUS_BSP ZZ "Implement dark mode"*/
 	case V4L2_CID_EXPOSURE_ABSOLUTE:	return "Exposure Time, Absolute";
 	case V4L2_CID_EXPOSURE_AUTO_PRIORITY:	return "Exposure, Dynamic Framerate";
 	case V4L2_CID_PAN_RELATIVE:		return "Pan, Relative";
@@ -786,6 +789,10 @@ const char *v4l2_ctrl_get_name(u32 id)
 	case V4L2_CID_VBLANK:			return "Vertical Blanking";
 	case V4L2_CID_HBLANK:			return "Horizontal Blanking";
 	case V4L2_CID_ANALOGUE_GAIN:		return "Analogue Gain";
+	case V4L2_CID_TEST_PATTERN_RED:		return "Red Pixel Value";
+	case V4L2_CID_TEST_PATTERN_GREENR:	return "Green (Red) Pixel Value";
+	case V4L2_CID_TEST_PATTERN_BLUE:	return "Blue Pixel Value";
+	case V4L2_CID_TEST_PATTERN_GREENB:	return "Green (Blue) Pixel Value";
 
 	/* Image processing controls */
 	case V4L2_CID_IMAGE_PROC_CLASS:		return "Image Processing Controls";

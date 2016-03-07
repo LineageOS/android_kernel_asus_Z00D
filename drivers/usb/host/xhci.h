@@ -134,6 +134,11 @@ struct xhci_cap_regs {
 /* Number of registers per port */
 #define	NUM_PORT_REGS	4
 
+#define PORTSC		0
+#define PORTPMSC	1
+#define PORTLI		2
+#define PORTHLPMC	3
+
 /**
  * struct xhci_op_regs - xHCI Host Controller Operational Registers.
  * @command:		USBCMD - xHC command register
@@ -280,6 +285,8 @@ struct xhci_op_regs {
 #define XDEV_U0		(0x0 << 5)
 #define XDEV_U2		(0x2 << 5)
 #define XDEV_U3		(0x3 << 5)
+#define XDEV_COMP	(0xa << 5)
+#define XDEV_LOOPBACK	(0xb << 5)
 #define XDEV_INACTIVE	(0x6 << 5)
 #define XDEV_RESUME	(0xf << 5)
 /* true: port has power (see HCC_PPC) */
@@ -381,8 +388,29 @@ struct xhci_op_regs {
 #define	PORT_RWE		(1 << 3)
 #define	PORT_HIRD(p)		(((p) & 0xf) << 4)
 #define	PORT_HIRD_MASK		(0xf << 4)
+#define	PORT_L1DS_MASK		(0xff << 8)
 #define	PORT_L1DS(p)		(((p) & 0xff) << 8)
 #define	PORT_HLE		(1 << 16)
+
+/* USB2 Protocol PORTHLPMC */
+#define PORT_HIRDM(p)((p) & 3)
+#define PORT_L1_TIMEOUT(p)(((p) & 0xff) << 2)
+#define PORT_BESLD(p)(((p) & 0xf) << 10)
+
+/* use 512 microseconds as USB2 LPM L1 default timeout. */
+#define XHCI_L1_TIMEOUT		512
+
+/* Set default HIRD/BESL value to 4 (350/400us) for USB2 L1 LPM resume latency.
+ * Safe to use with mixed HIRD and BESL systems (host and device) and is used
+ * by other operating systems.
+ *
+ * XHCI 1.0 errata 8/14/12 Table 13 notes:
+ * "Software should choose xHC BESL/BESLD field values that do not violate a
+ * device's resume latency requirements,
+ * e.g. not program values > '4' if BLC = '1' and a HIRD device is attached,
+ * or not program values < '4' if BLC = '0' and a BESL device is attached.
+ */
+#define XHCI_DEFAULT_BESL	4
 
 /**
  * struct xhci_intr_reg - Interrupt Register Set
@@ -840,8 +868,6 @@ struct xhci_virt_ep {
 #define EP_GETTING_NO_STREAMS	(1 << 5)
 	/* ----  Related to URB cancellation ---- */
 	struct list_head	cancelled_td_list;
-	/* The TRB that was last reported in a stopped endpoint ring */
-	union xhci_trb		*stopped_trb;
 	struct xhci_td		*stopped_td;
 	unsigned int		stopped_stream;
 	/* Watchdog timer for stop endpoint command to cancel URBs */
@@ -1267,6 +1293,7 @@ struct xhci_td {
 
 /* xHCI command default timeout value */
 #define XHCI_CMD_DEFAULT_TIMEOUT	(5 * HZ)
+#define XHCI_WAIT_CMD_RING_READY_TIMEOUT 10 /* 2s*/
 
 /* command descriptor */
 struct xhci_cd {
@@ -1391,7 +1418,16 @@ struct xhci_bus_state {
 	unsigned long		resume_done[USB_MAXCHILDREN];
 	/* which ports have started to resume */
 	unsigned long		resuming_ports;
+	/* Which ports are waiting on RExit to U0 transition. */
+	unsigned long		rexit_ports;
+	struct completion	rexit_done[USB_MAXCHILDREN];
 };
+
+
+/* It can take up to 20 ms to transition from RExit to U0 on the
+ * Intel Lynx Point LP xHCI host.archdata
+ */
+#define XHCI_MAX_REXIT_TIMEOUT  (20 * 1000)
 
 static inline unsigned int hcd_index(struct usb_hcd *hcd)
 {
@@ -1453,7 +1489,9 @@ struct xhci_hcd {
 	/* Store LPM test failed devices' information */
 	struct list_head	lpm_failed_devs;
 
-	/* slot enabling and address device helpers */
+	/* slot enabling helpers */
+	struct completion	enable_slot;
+	/* address device helpers */
 	struct completion	addr_dev;
 	int slot_id;
 	/* For USB 3.0 LPM enable/disable. */
@@ -1523,6 +1561,12 @@ struct xhci_hcd {
 #define XHCI_COMP_MODE_QUIRK	(1 << 14)
 #define XHCI_AVOID_BEI		(1 << 15)
 #define XHCI_PLAT		(1 << 16)
+#define XHCI_PORT_DISABLE_QUIRK	(1 << 17)
+#define XHCI_LPM_DISABLE_QUIRK	(1 << 18)
+#define XHCI_COMP_PLC_QUIRK		(1 << 19)
+#define XHCI_RESET		(1 << 20)
+#define XHCI_FORCE_WR		(1 << 21)
+#define XHCI_PORT_RESET		(1 << 22)
 	unsigned int		num_active_eps;
 	unsigned int		limit_active_eps;
 	/* There are two roothubs to keep track of bus suspend info for */
@@ -1539,11 +1583,18 @@ struct xhci_hcd {
 	unsigned		sw_lpm_support:1;
 	/* support xHCI 1.0 spec USB2 hardware LPM */
 	unsigned		hw_lpm_support:1;
+	/* cached usb2 extened protocol capabilites */
+	u32			*ext_caps;
+	unsigned int		num_ext_caps;
 	/* Compliance Mode Recovery Data */
 	struct timer_list	comp_mode_recovery_timer;
 	u32			port_status_u0;
 /* Compliance Mode Timer Triggered every 2 seconds */
 #define COMP_MODE_RCVRY_MSECS 2000
+	struct work_struct	pm_check;
+	int			pm_check_flag;
+	void __iomem		*pmc_base_addr;
+	struct work_struct	*reset_hcd_work;
 };
 
 /* convert between an HCD pointer and the corresponding EHCI_HCD */
@@ -1711,11 +1762,15 @@ void xhci_free_command(struct xhci_hcd *xhci,
 
 #ifdef CONFIG_PCI
 /* xHCI PCI glue */
+int xhci_register_ush_pci(void);
+void xhci_unregister_ush_pci(void);
 int xhci_register_pci(void);
 void xhci_unregister_pci(void);
 #else
 static inline int xhci_register_pci(void) { return 0; }
 static inline void xhci_unregister_pci(void) {}
+static inline int xhci_register_ush_pci(void) { return 0; }
+static inline void xhci_unregister_ush_pci(void) {}
 #endif
 
 #if defined(CONFIG_USB_XHCI_PLATFORM) \
@@ -1753,6 +1808,7 @@ int xhci_resume(struct xhci_hcd *xhci, bool hibernated);
 int xhci_get_frame(struct usb_hcd *hcd);
 irqreturn_t xhci_irq(struct usb_hcd *hcd);
 irqreturn_t xhci_msi_irq(int irq, struct usb_hcd *hcd);
+irqreturn_t xhci_byt_pm_irq(int irq, struct usb_hcd *hcd);
 int xhci_alloc_dev(struct usb_hcd *hcd, struct usb_device *udev);
 void xhci_free_dev(struct usb_hcd *hcd, struct usb_device *udev);
 int xhci_alloc_tt_info(struct xhci_hcd *xhci,
@@ -1863,5 +1919,5 @@ struct xhci_ep_ctx *xhci_get_ep_ctx(struct xhci_hcd *xhci, struct xhci_container
 
 /* xHCI quirks */
 bool xhci_compliance_mode_recovery_timer_quirk_check(void);
-
+extern unsigned is_ssic_probe(void);
 #endif /* __LINUX_XHCI_HCD_H */

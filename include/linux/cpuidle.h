@@ -21,6 +21,8 @@
 #define CPUIDLE_NAME_LEN	16
 #define CPUIDLE_DESC_LEN	32
 
+DECLARE_PER_CPU(u64, predicted_time);
+
 struct module;
 
 struct cpuidle_device;
@@ -114,6 +116,7 @@ struct cpuidle_driver {
 };
 
 #ifdef CONFIG_CPU_IDLE
+DECLARE_PER_CPU(int, update_buckets);
 extern void disable_cpuidle(void);
 extern int cpuidle_idle_call(void);
 extern int cpuidle_register_driver(struct cpuidle_driver *drv);
@@ -139,6 +142,7 @@ extern int cpuidle_register_cpu_driver(struct cpuidle_driver *drv, int cpu);
 extern void cpuidle_unregister_cpu_driver(struct cpuidle_driver *drv, int cpu);
 
 #else
+DECLARE_PER_CPU(int, update_buckets);
 static inline void disable_cpuidle(void) { }
 static inline int cpuidle_idle_call(void) { return -ENODEV; }
 static inline int cpuidle_register_driver(struct cpuidle_driver *drv)

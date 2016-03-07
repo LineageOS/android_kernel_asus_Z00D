@@ -33,6 +33,8 @@ config SND_SOC_ALL_CODECS
 	select SND_SOC_CS42L51 if I2C
 	select SND_SOC_CS42L52 if I2C
 	select SND_SOC_CS42L73 if I2C
+	select SND_SOC_LM49453 if I2C
+	select SND_SOC_RT5640 if I2C
 	select SND_SOC_CS4270 if I2C
 	select SND_SOC_CS4271 if SND_SOC_I2C_AND_SPI
 	select SND_SOC_CX20442 if TTY
@@ -56,6 +58,8 @@ config SND_SOC_ALL_CODECS
 	select SND_SOC_OMAP_HDMI_CODEC if OMAP4_DSS_HDMI
 	select SND_SOC_PCM3008
 	select SND_SOC_RT5631 if I2C
+	select SND_SOC_RT5647 if I2C
+	select SND_SOC_RT5671 if I2C
 	select SND_SOC_SGTL5000 if I2C
 	select SND_SOC_SI476X if MFD_SI476X_CORE
 	select SND_SOC_SN95031 if INTEL_SCU_IPC
@@ -69,6 +73,7 @@ config SND_SOC_ALL_CODECS
 	select SND_SOC_TLV320AIC26 if SPI_MASTER
 	select SND_SOC_TLV320AIC32X4 if I2C
 	select SND_SOC_TLV320AIC3X if I2C
+	select SND_SOC_TLV320AIC31XX if I2C
 	select SND_SOC_TPA6130A2 if I2C
 	select SND_SOC_TLV320DAC33 if I2C
 	select SND_SOC_TWL4030 if TWL4030_CORE
@@ -82,7 +87,7 @@ config SND_SOC_ALL_CODECS
 	select SND_SOC_WM2200 if I2C
 	select SND_SOC_WM5100 if I2C
 	select SND_SOC_WM5102 if MFD_WM5102
-	select SND_SOC_WM5110 if MFD_WM5110
+	select SND_SOC_FLORIDA if MFD_FLORIDA
 	select SND_SOC_WM8350 if MFD_WM8350
 	select SND_SOC_WM8400 if MFD_WM8400
 	select SND_SOC_WM8510 if SND_SOC_I2C_AND_SPI
@@ -120,6 +125,7 @@ config SND_SOC_ALL_CODECS
 	select SND_SOC_WM8994 if MFD_WM8994
 	select SND_SOC_WM8995 if SND_SOC_I2C_AND_SPI
 	select SND_SOC_WM8996 if I2C
+	select SND_SOC_WM8997 if MFD_WM8997
 	select SND_SOC_WM9081 if I2C
 	select SND_SOC_WM9090 if I2C
 	select SND_SOC_WM9705 if SND_SOC_AC97_BUS
@@ -142,9 +148,11 @@ config SND_SOC_88PM860X
 config SND_SOC_ARIZONA
 	tristate
 	default y if SND_SOC_WM5102=y
-	default y if SND_SOC_WM5110=y
+	default y if SND_SOC_FLORIDA=y
+	default y if SND_SOC_WM8997=y
 	default m if SND_SOC_WM5102=m
-	default m if SND_SOC_WM5110=m
+	default m if SND_SOC_FLORIDA=m
+	default m if SND_SOC_WM8997=m
 
 config SND_SOC_WM_HUBS
 	tristate
@@ -154,8 +162,10 @@ config SND_SOC_WM_HUBS
 config SND_SOC_WM_ADSP
 	tristate
 	default y if SND_SOC_WM5102=y
+	default y if SND_SOC_FLORIDA=y
 	default y if SND_SOC_WM2200=y
 	default m if SND_SOC_WM5102=m
+	default m if SND_SOC_FLORIDA=m
 	default m if SND_SOC_WM2200=m
 
 config SND_SOC_AB8500_CODEC
@@ -218,10 +228,18 @@ config SND_SOC_CQ0093VC
 
 config SND_SOC_CS42L51
 	tristate
+config SND_SOC_LM49453
+	tristate
 
 config SND_SOC_CS42L52
 	tristate
 
+config SND_SOC_RT5640
+	tristate
+config SND_SOC_RT5642
+	tristate
+config SND_SOC_RT5672
+	tristate
 config SND_SOC_CS42L73
 	tristate
 
@@ -296,6 +314,14 @@ config SND_SOC_PCM3008
 config SND_SOC_RT5631
 	tristate
 
+config SND_SOC_RT5647
+	tristate
+	select SND_HWDEP
+
+config SND_SOC_RT5671
+	tristate
+	select SND_HWDEP
+
 #Freescale sgtl5000 codec
 config SND_SOC_SGTL5000
 	tristate
@@ -341,6 +367,9 @@ config SND_SOC_TLV320AIC32X4
 config SND_SOC_TLV320AIC3X
 	tristate
 
+config SND_SOC_TLV320AIC31XX
+        tristate
+
 config SND_SOC_TLV320DAC33
 	tristate
 
@@ -378,7 +407,7 @@ config SND_SOC_WM5100
 config SND_SOC_WM5102
 	tristate
 
-config SND_SOC_WM5110
+config SND_SOC_FLORIDA
 	tristate
 
 config SND_SOC_WM8350
@@ -490,6 +519,9 @@ config SND_SOC_WM8995
 	tristate
 
 config SND_SOC_WM8996
+	tristate
+
+config SND_SOC_WM8997
 	tristate
 
 config SND_SOC_WM9081

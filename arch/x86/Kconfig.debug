@@ -304,4 +304,32 @@ config DEBUG_NMI_SELFTEST
 
 	  If unsure, say N.
 
+config INTEL_MID_PSTORE_RAM
+	bool "Enable Intel MID support for pstore RAM (ramoops, ram_console)"
+	depends on X86_WANT_INTEL_MID
+	select PSTORE
+	select PSTORE_RAM
+	select PSTORE_CONSOLE
+	----help---
+	  Select this option to enable pstore RAM backend support on
+	  Intel MID. It reserve ram and configure pstore ram
+	  (CONFIG_PSTORE_RAM). This enable panic and oops to be
+	  logged to pstore and make them available for next reboot.
+
+	  Pstore filesystem can be mounted to retrieve files :
+	  mount -t pstore none /logs/pstore
+	  For more information, see Documentation/ABI/testing/pstore
+
+	  Options could be enabled, see CONFIG_PSTORE_CONSOLE and
+	  CONFIG_PSTORE_FTRACE.
+
+config LBR_DUMP_ON_EXCEPTION
+	bool "Dump Last Branch Records on Oops"
+	depends on DEBUG_KERNEL && X86_64
+	---help---
+	  Enabling this option turns on LBR recording and dump during Oops.
+
+	  This might help diagnose exceptions where faulting code
+	  is not easy to determine from the call stack.
+
 endmenu

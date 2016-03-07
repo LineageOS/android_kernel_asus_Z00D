@@ -14,7 +14,7 @@
 #include <xen/hvc-console.h>
 #include <asm/pci-direct.h>
 #include <asm/fixmap.h>
-#include <asm/mrst.h>
+#include <asm/intel-mid.h>
 #include <asm/pgtable.h>
 #include <linux/usb/ehci_def.h>
 
@@ -169,6 +169,10 @@ static struct console early_serial_console = {
 	.index =	-1,
 };
 
+#ifdef CONFIG_INTEL_NORTHPEAK_EARLY_PRINTK
+extern struct console early_npk_console;
+#endif
+
 static inline void early_console_register(struct console *con, int keep_early)
 {
 	if (con->index != -1) {
@@ -228,11 +232,20 @@ static int __init setup_early_printk(char *buf)
 			mrst_early_console_init();
 			early_console_register(&early_mrst_console, keep);
 		}
-
+		if (!strncmp(buf, "mrfld", 5)) {
+			mrfld_early_console_init();
+			early_console_register(&early_mrfld_console, keep);
+		}
 		if (!strncmp(buf, "hsu", 3)) {
 			hsu_early_console_init(buf + 3);
 			early_console_register(&early_hsu_console, keep);
 		}
+		if (!strncmp(buf, "pti", 3))
+			early_console_register(&early_pti_console, keep);
+#endif
+#ifdef CONFIG_INTEL_NORTHPEAK_EARLY_PRINTK
+		if (!strncmp(buf, "npk", 3))
+			early_console_register(&early_npk_console, keep);
 #endif
 		buf++;
 	}

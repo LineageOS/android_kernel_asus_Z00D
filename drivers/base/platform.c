@@ -92,6 +92,11 @@ int platform_get_irq(struct platform_device *dev, unsigned int num)
 #else
 	struct resource *r = platform_get_resource(dev, IORESOURCE_IRQ, num);
 
+	/* ZE500CL001S */
+	if (r)
+		pr_warning("[PM] Device: %s, Get IRQ: %d.\n", dev->name, r->start);
+	/* ZE500CL001E */
+
 	return r ? r->start : -ENXIO;
 #endif
 }

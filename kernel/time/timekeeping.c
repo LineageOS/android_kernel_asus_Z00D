@@ -965,6 +965,15 @@ static void timekeeping_resume(void)
 
 	/* Resume hrtimers */
 	hrtimers_resume();
+
+	/* ZE500CL001S */
+	if (suspendtime_found) {
+		pr_warn("[PM] Suspended for %lu.%03lu seconds\n", ts_delta.tv_sec, ts_delta.tv_nsec / NSEC_PER_MSEC);
+		/* +++ Fixed format for log parser, DO NOT MODIFY +++ */
+		ASUSEvtlog("[PM] Suspended for %lu.%03lu secs\n", ts_delta.tv_sec, ts_delta.tv_nsec / NSEC_PER_MSEC);
+		/* --- Fixed format for log parser, DO NOT MODIFY --- */
+	}
+	/* ZE500CL001E */
 }
 
 static int timekeeping_suspend(void)

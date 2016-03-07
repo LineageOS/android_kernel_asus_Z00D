@@ -25,6 +25,10 @@
 #include <linux/alarmtimer.h>
 #include "android_alarm.h"
 
+#ifdef CONFIG_COMPAT
+#include <linux/compat.h>
+#endif
+
 #define ANDROID_ALARM_PRINT_INFO (1U << 0)
 #define ANDROID_ALARM_PRINT_IO (1U << 1)
 #define ANDROID_ALARM_PRINT_INT (1U << 2)
@@ -40,7 +44,8 @@ do {									\
 
 #define ANDROID_ALARM_WAKEUP_MASK ( \
 	ANDROID_ALARM_RTC_WAKEUP_MASK | \
-	ANDROID_ALARM_ELAPSED_REALTIME_WAKEUP_MASK)
+	ANDROID_ALARM_ELAPSED_REALTIME_WAKEUP_MASK | \
+	ANDROID_ALARM_POWER_OFF_WAKEUP_MASK)
 
 static int alarm_opened;
 static DEFINE_SPINLOCK(alarm_slock);
@@ -64,7 +69,8 @@ static struct devalarm alarms[ANDROID_ALARM_TYPE_COUNT];
 static int is_wakeup(enum android_alarm_type type)
 {
 	return (type == ANDROID_ALARM_RTC_WAKEUP ||
-		type == ANDROID_ALARM_ELAPSED_REALTIME_WAKEUP);
+		type == ANDROID_ALARM_ELAPSED_REALTIME_WAKEUP ||
+		type == ANDROID_ALARM_POWER_OFF_WAKEUP);
 }
 
 
@@ -154,9 +160,16 @@ static int alarm_set_rtc(struct timespec *ts)
 {
 	struct rtc_time new_rtc_tm;
 	struct rtc_device *rtc_dev;
+	struct timespec tmp_time;			/* ASUS_BSP --- Shawn_Huang Add Event log when set time */
+	struct rtc_time ori_tm, new_tm;	/* ASUS_BSP --- Shawn_Huang Add Event log when set time */
 	unsigned long flags;
 	int rv = 0;
 
+	/* ASUS_BSP +++ Shawn_Huang Add Event log when set time */
+	getnstimeofday(&tmp_time);
+	tmp_time.tv_sec -= sys_tz.tz_minuteswest * 60;
+	rtc_time_to_tm(tmp_time.tv_sec, &ori_tm);
+	/* ASUS_BSP --- Shawn_Huang Add Event log when set time */
 	rtc_time_to_tm(ts->tv_sec, &new_rtc_tm);
 	rtc_dev = alarmtimer_get_rtcdev();
 	rv = do_settimeofday(ts);
@@ -168,6 +181,24 @@ static int alarm_set_rtc(struct timespec *ts)
 	spin_lock_irqsave(&alarm_slock, flags);
 	alarm_pending |= ANDROID_ALARM_TIME_CHANGE_MASK;
 	wake_up(&alarm_wait_queue);
+	/* ASUS_BSP +++ Shawn_Huang Add Event log when set time */
+	getnstimeofday(&tmp_time);
+	tmp_time.tv_sec -= sys_tz.tz_minuteswest * 60;
+	rtc_time_to_tm(tmp_time.tv_sec, &new_tm);
+	ASUSEvtlog("[UTS] RTC update: Current Datetime: %04d-%02d-%02d %02d:%02d:%02d,Update Datetime: %04d-%02d-%02d %02d:%02d:%02d\r\n",
+		ori_tm.tm_year + 1900,
+		ori_tm.tm_mon + 1,
+		ori_tm.tm_mday,
+		ori_tm.tm_hour,
+		ori_tm.tm_min,
+		ori_tm.tm_sec,
+		new_tm.tm_year + 1900,
+		new_tm.tm_mon + 1,
+		new_tm.tm_mday,
+		new_tm.tm_hour,
+		new_tm.tm_min,
+		new_tm.tm_sec);
+	/* ASUS_BSP --- Shawn_Huang Add Event log when set time */
 	spin_unlock_irqrestore(&alarm_slock, flags);
 
 	return rv;
@@ -181,6 +212,7 @@ static int alarm_get_time(enum android_alarm_type alarm_type,
 	switch (alarm_type) {
 	case ANDROID_ALARM_RTC_WAKEUP:
 	case ANDROID_ALARM_RTC:
+	case ANDROID_ALARM_POWER_OFF_WAKEUP:
 		getnstimeofday(ts);
 		break;
 	case ANDROID_ALARM_ELAPSED_REALTIME_WAKEUP:
@@ -248,11 +280,13 @@ static long alarm_do_ioctl(struct file *file, unsigned int cmd,
 	return rv;
 }
 
+int rtc_ready;
 static long alarm_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 {
 
 	struct timespec ts;
-	int rv;
+	long rv = 0;
+
 
 	switch (ANDROID_ALARM_BASE_CMD(cmd)) {
 	case ANDROID_ALARM_SET_AND_WAIT(0):
@@ -260,6 +294,11 @@ static long alarm_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 	case ANDROID_ALARM_SET_RTC:
 		if (copy_from_user(&ts, (void __user *)arg, sizeof(ts)))
 			return -EFAULT;
+		if (rtc_ready == 0) {
+			rtc_ready = 1;
+			printk("%s: ANDROID_ALARM_BASE_CMD(cmd)=0x%08x\n",
+				__func__, ANDROID_ALARM_BASE_CMD(cmd));
+		}
 		break;
 	}
 
@@ -282,7 +321,7 @@ static long alarm_compat_ioctl(struct file *file, unsigned int cmd,
 {
 
 	struct timespec ts;
-	int rv;
+	long rv;
 
 	switch (ANDROID_ALARM_BASE_CMD(cmd)) {
 	case ANDROID_ALARM_SET_AND_WAIT_COMPAT(0):
@@ -290,6 +329,11 @@ static long alarm_compat_ioctl(struct file *file, unsigned int cmd,
 	case ANDROID_ALARM_SET_RTC_COMPAT:
 		if (compat_get_timespec(&ts, (void __user *)arg))
 			return -EFAULT;
+		if (rtc_ready == 0) {
+			rtc_ready = 1;
+			printk("%s: ANDROID_ALARM_BASE_CMD(cmd)=0x%08x\n",
+				__func__, ANDROID_ALARM_BASE_CMD(cmd));
+		}
 		/* fall through */
 	case ANDROID_ALARM_GET_TIME_COMPAT(0):
 		cmd = ANDROID_ALARM_COMPAT_TO_NORM(cmd);
@@ -389,6 +433,9 @@ static enum alarmtimer_restart devalarm_alarmhandler(struct alarm *alrm,
 static const struct file_operations alarm_fops = {
 	.owner = THIS_MODULE,
 	.unlocked_ioctl = alarm_ioctl,
+#ifdef CONFIG_COMPAT
+	.compat_ioctl   = alarm_ioctl,
+#endif
 	.open = alarm_open,
 	.release = alarm_release,
 #ifdef CONFIG_COMPAT
@@ -413,6 +460,8 @@ static int __init alarm_dev_init(void)
 
 	alarm_init(&alarms[ANDROID_ALARM_RTC_WAKEUP].u.alrm,
 			ALARM_REALTIME, devalarm_alarmhandler);
+	alarm_init(&alarms[ANDROID_ALARM_POWER_OFF_WAKEUP].u.alrm,
+			ALARM_REALTIME_OFF, devalarm_alarmhandler);
 	hrtimer_init(&alarms[ANDROID_ALARM_RTC].u.hrt,
 			CLOCK_REALTIME, HRTIMER_MODE_ABS);
 	alarm_init(&alarms[ANDROID_ALARM_ELAPSED_REALTIME_WAKEUP].u.alrm,

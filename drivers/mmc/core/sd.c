@@ -215,7 +215,7 @@ static int mmc_decode_scr(struct mmc_card *card)
 static int mmc_read_ssr(struct mmc_card *card)
 {
 	unsigned int au, es, et, eo;
-	int err, i;
+	int err, i, max_au;
 	u32 *ssr;
 
 	if (!(card->csd.cmdclass & CCC_APP_SPEC)) {
@@ -239,12 +239,15 @@ static int mmc_read_ssr(struct mmc_card *card)
 	for (i = 0; i < 16; i++)
 		ssr[i] = be32_to_cpu(ssr[i]);
 
+	/* SD3.0 increases max AU size to 64MB (0xF) from 4MB (0x9) */
+	max_au = card->scr.sda_spec3 ? 0xF : 0x9;
+
 	/*
 	 * UNSTUFF_BITS only works with four u32s so we have to offset the
 	 * bitfield positions accordingly.
 	 */
 	au = UNSTUFF_BITS(ssr, 428 - 384, 4);
-	if (au > 0 && au <= 9) {
+	if (au > 0 && au <= max_au) {
 		card->ssr.au = 1 << (au + 4);
 		es = UNSTUFF_BITS(ssr, 408 - 384, 16);
 		et = UNSTUFF_BITS(ssr, 402 - 384, 6);
@@ -805,6 +808,9 @@ int mmc_sd_setup_card(struct mmc_host *host, struct mmc_card *card,
 	bool reinit)
 {
 	int err;
+#ifdef CONFIG_MMC_PARANOID_SD_INIT
+	int retries;
+#endif
 
 	if (!reinit) {
 		/*
@@ -831,7 +837,26 @@ int mmc_sd_setup_card(struct mmc_host *host, struct mmc_card *card,
 		/*
 		 * Fetch switch information from card.
 		 */
+#ifdef CONFIG_MMC_PARANOID_SD_INIT
+		for (retries = 1; retries <= 3; retries++) {
+			err = mmc_read_switch(card);
+			if (!err) {
+				if (retries > 1) {
+					printk(KERN_WARNING
+					       "%s: recovered\n", 
+					       mmc_hostname(host));
+				}
+				break;
+			} else {
+				printk(KERN_WARNING
+				       "%s: read switch failed (attempt %d)\n",
+				       mmc_hostname(host), retries);
+			}
+		}
+#else
 		err = mmc_read_switch(card);
+#endif
+
 		if (err)
 			return err;
 	}
@@ -889,6 +914,13 @@ unsigned mmc_sd_get_max_clock(struct mmc_card *card)
 
 void mmc_sd_go_highspeed(struct mmc_card *card)
 {
+	/*ASUS_BSP Deeo : dump log +++*/
+	if (!strcmp(mmc_hostname(card->host), "mmc1"))
+		printk("[SD] mmc_sd_go_highspeed\n");
+	else if (!strcmp(mmc_hostname(card->host), "mmc2"))
+		printk("[SDIO] mmc_sd_go_highspeed\n");
+	/*ASUS_BSP Deeo : dump log ---*/
+
 	mmc_card_set_highspeed(card);
 	mmc_set_timing(card->host, MMC_TIMING_SD_HS);
 }
@@ -899,6 +931,7 @@ void mmc_sd_go_highspeed(struct mmc_card *card)
  * In the case of a resume, "oldcard" will contain the card
  * we're trying to reinitialise.
  */
+#define SD_ALIVE_TEST_COUNT 100		/*ASUS_BSP Deeo : Intel SD workaround patch */
 static int mmc_sd_init_card(struct mmc_host *host, u32 ocr,
 	struct mmc_card *oldcard)
 {
@@ -906,10 +939,15 @@ static int mmc_sd_init_card(struct mmc_host *host, u32 ocr,
 	int err;
 	u32 cid[4];
 	u32 rocr = 0;
+	/*ASUS_BSP Deeo : Intel SD workaround patch +++*/
+	int tmp;
+	unsigned long timeout, t1, alive_count;
+	/*ASUS_BSP Deeo : Intel SD workaround patch ---*/
 
 	BUG_ON(!host);
 	WARN_ON(!host->claimed);
 
+	printk("[SD] mmc_sd_init_card V3\n");		/*ASUS_BSP Deeo : add log for SD issue*/
 	err = mmc_sd_get_cid(host, ocr, cid, &rocr);
 	if (err)
 		return err;
@@ -961,6 +999,26 @@ static int mmc_sd_init_card(struct mmc_host *host, u32 ocr,
 	if (err)
 		goto free_card;
 
+	if (!(rocr & SD_ROCR_S18A) && mmc_sd_card_uhs(card)) {
+		/*
+		 * SD card which has DDR50/SDR104 flag and noddr50 flag has
+		 * already in 1.8v IO voltage without a power loss
+		 */
+		err = __mmc_set_signal_voltage(host, MMC_SIGNAL_VOLTAGE_180);
+		if (err) {
+			pr_err("%s: swith to 1.8v for re-init failed\n",
+					mmc_hostname(host));
+			goto free_card;
+		}
+		rocr |= SD_ROCR_S18A;
+	}
+
+	if (mmc_card_noddr50(card)) {
+		card->sw_caps.sd3_bus_mode &= ~(SD_MODE_UHS_DDR50 |
+				SD_MODE_UHS_SDR104);
+		pr_info("%s: disable DDR50/SDR104\n", __func__);
+	}
+
 	/* Initialization sequence for UHS-I cards */
 	if (rocr & SD_ROCR_S18A) {
 		err = mmc_sd_init_uhs_card(card);
@@ -982,7 +1040,34 @@ static int mmc_sd_init_card(struct mmc_host *host, u32 ocr,
 		/*
 		 * Set bus speed.
 		 */
-		mmc_set_clock(host, mmc_sd_get_max_clock(card));
+		host->f_max_card = mmc_sd_get_max_clock(card);	/* ASUS_BSP Deeo : add for workaround 50MHz clock unstable */
+		mmc_set_clock(host, host->f_max_card);
+
+		/*ASUS_BSP Deeo : Intel SD workaround patch +++*/
+		if (host->caps2 & MMC_CAP2_BROKEN_MAX_CLK) {
+			/* If MMC_CAP2_BROKEN_MAX_CLK is set, it means the clock quality may not good enough.
+			* So, we need to ensure the card is responsable by asking status. */
+			t1 = jiffies;
+			timeout = jiffies + 3*HZ;	/*ASUS_BSP Deeo : decrease while loop times*/
+			while (time_before(jiffies, timeout)) {
+				for (alive_count = 0; alive_count < SD_ALIVE_TEST_COUNT; alive_count++) {
+					host->half_max_clk_count++;
+					tmp = mmc_send_status(card, NULL);
+					if (tmp)
+						break;
+				}
+				if (alive_count >= SD_ALIVE_TEST_COUNT)
+					break;
+				msleep(1);
+			}
+			t1 = (unsigned long)jiffies_to_msecs(jiffies - t1);
+			printk("[SD] Bus test end!!");
+			if (t1 > 20) {
+				msleep(1000);
+				pr_info("%s: online in %u ms\n", mmc_hostname(host), t1 + 1000);
+			}
+		}
+		/*ASUS_BSP Deeo : Intel SD workaround patch ---*/
 
 		/*
 		 * Switch to wider bus (if supported).
@@ -1001,6 +1086,11 @@ static int mmc_sd_init_card(struct mmc_host *host, u32 ocr,
 	return 0;
 
 free_card:
+	/*ASUS_BSP Deeo : workaround for SD clk raising time not enough*/
+	printk("[SD] wait for 0.5s before close power!!\n");
+	msleep(500);
+	/*ASUS_BSP Deeo : workaround for SD clk raising time not enough*/
+
 	if (!oldcard)
 		mmc_remove_card(card);
 
@@ -1032,7 +1122,10 @@ static int mmc_sd_alive(struct mmc_host *host)
  */
 static void mmc_sd_detect(struct mmc_host *host)
 {
-	int err;
+	int err = 0;
+#ifdef CONFIG_MMC_PARANOID_SD_INIT
+	int retries = 5;
+#endif
 
 	BUG_ON(!host);
 	BUG_ON(!host->card);
@@ -1042,7 +1135,23 @@ static void mmc_sd_detect(struct mmc_host *host)
 	/*
 	 * Just check if our card has been removed.
 	 */
+#ifdef CONFIG_MMC_PARANOID_SD_INIT
+	while(retries) {
+		err = mmc_send_status(host->card, NULL);
+		if (err) {
+			retries--;
+			udelay(5);
+			continue;
+		}
+		break;
+	}
+	if (!retries) {
+		printk(KERN_ERR "%s(%s): Unable to re-detect card (%d)\n",
+		       __func__, mmc_hostname(host), err);
+	}
+#else
 	err = _mmc_detect_card_removed(host);
+#endif
 
 	mmc_release_host(host);
 
@@ -1084,12 +1193,31 @@ static int mmc_sd_suspend(struct mmc_host *host)
 static int mmc_sd_resume(struct mmc_host *host)
 {
 	int err;
+#ifdef CONFIG_MMC_PARANOID_SD_INIT
+	int retries;
+#endif
 
 	BUG_ON(!host);
 	BUG_ON(!host->card);
 
 	mmc_claim_host(host);
+#ifdef CONFIG_MMC_PARANOID_SD_INIT
+	retries = 5;
+	while (retries) {
+		err = mmc_sd_init_card(host, host->ocr, host->card);
+
+		if (err) {
+			printk(KERN_ERR "%s: Re-init card rc = %d (retries = %d)\n",
+			       mmc_hostname(host), err, retries);
+			mdelay(5);
+			retries--;
+			continue;
+		}
+		break;
+	}
+#else
 	err = mmc_sd_init_card(host, host->ocr, host->card);
+#endif
 	mmc_release_host(host);
 
 	return err;
@@ -1143,6 +1271,9 @@ int mmc_attach_sd(struct mmc_host *host)
 {
 	int err;
 	u32 ocr;
+#ifdef CONFIG_MMC_PARANOID_SD_INIT
+	int retries;
+#endif
 
 	BUG_ON(!host);
 	WARN_ON(!host->claimed);
@@ -1198,9 +1329,27 @@ int mmc_attach_sd(struct mmc_host *host)
 	/*
 	 * Detect and init the card.
 	 */
+#ifdef CONFIG_MMC_PARANOID_SD_INIT
+	retries = 5;
+	while (retries) {
+		err = mmc_sd_init_card(host, host->ocr, NULL);
+		if (err) {
+			retries--;
+			continue;
+		}
+		break;
+	}
+
+	if (!retries) {
+		printk(KERN_ERR "%s: mmc_sd_init_card() failure (err = %d)\n",
+		       mmc_hostname(host), err);
+		goto err;
+	}
+#else
 	err = mmc_sd_init_card(host, host->ocr, NULL);
 	if (err)
 		goto err;
+#endif
 
 	mmc_release_host(host);
 	err = mmc_add_card(host->card);

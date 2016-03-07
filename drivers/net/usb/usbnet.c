@@ -46,6 +46,7 @@
 #include <linux/slab.h>
 #include <linux/kernel.h>
 #include <linux/pm_runtime.h>
+#include <linux/debugfs.h>
 
 #define DRIVER_VERSION		"22-Aug-2005"
 
@@ -76,9 +77,6 @@
 // us (it polls at HZ/4 usually) before we report too many false errors.
 #define THROTTLE_JIFFIES	(HZ/8)
 
-// between wakeups
-#define UNLINK_TIMEOUT_MS	3
-
 /*-------------------------------------------------------------------------*/
 
 // randomly generated ethernet address
@@ -88,8 +86,49 @@ static const char driver_name [] = "usbnet";
 
 /* use ethtool to change the level for any given device */
 static int msg_level = -1;
+static wait_queue_head_t unlink_wakeup;
+
+static struct dentry *usbnet_debug_root;
+static struct dentry *usbnet_debug_data_dump_enable;
+static struct dentry *usbnet_debug_partial_dump_len;
+static u32 usbnet_data_dump_enable;
+static u32 usbnet_partial_dump_len = 10;
+
 module_param (msg_level, int, 0);
 MODULE_PARM_DESC (msg_level, "Override default message level");
+
+static inline int is_hsic_modem(struct usb_device *udev)
+{
+	/* Check if it is Infenion (now intel) HSIC device */
+	if (udev->descriptor.idVendor == 0x1519 &&
+		udev->descriptor.idProduct == 0x0452)
+		return 1;
+
+	return 0;
+}
+
+static void usbnet_dump(struct usbnet *dev, u8 is_out,
+	const void *buf, size_t len)
+{
+	const u8 *ptr = buf;
+	int i, linelen, remaining = len;
+	unsigned char linebuf[32 * 3 + 2 + 32 + 1];
+	int rowsize = 16;
+	int groupsize = 1;
+	bool ascii = true;
+
+	for (i = 0; i < len; i += rowsize) {
+		linelen = min(remaining, rowsize);
+		remaining -= rowsize;
+
+		hex_dump_to_buffer(ptr + i, linelen, rowsize, groupsize,
+				   linebuf, sizeof(linebuf), ascii);
+
+		trace_printk("[%s %s] %.4x: %s\n", dev->net->name,
+			is_out == 1 ? "-->" : "<--", i, linebuf);
+	}
+
+}
 
 /*-------------------------------------------------------------------------*/
 
@@ -193,6 +232,14 @@ static void intr_complete (struct urb *urb)
 
 	/* software-driven interface shutdown */
 	case -ENOENT:		/* urb killed */
+		if (urb->actual_length) {
+			netdev_dbg(dev->net,
+				"intr status %d\, length: %dn",
+				status, urb->actual_length);
+			dev->driver_info->status(dev, urb);
+		}
+		break;
+
 	case -ESHUTDOWN:	/* hardware gone */
 		netif_dbg(dev, ifdown, dev->net,
 			  "intr shutdown, code %d\n", status);
@@ -564,7 +611,27 @@ static void rx_complete (struct urb *urb)
 		// FALLTHROUGH
 
 	/* software-driven interface shutdown */
+	case -ENOENT:		/* urb killed */
 	case -ECONNRESET:		/* async unlink */
+		if (urb->actual_length) {
+			if (skb->len < dev->net->hard_header_len) {
+				state = rx_cleanup;
+				dev->net->stats.rx_errors++;
+				dev->net->stats.rx_length_errors++;
+				netif_dbg(dev, rx_err, dev->net,
+					  "rx length %d\n", skb->len);
+			}
+			netif_dbg(dev, ifdown, dev->net,
+				  "rx length in async unlink: %d\n",
+					urb->actual_length);
+		} else {
+			netif_dbg(dev, ifdown, dev->net,
+				  "rx async unlink, code %d\n",
+					urb_status);
+			goto block;
+		}
+		break;
+
 	case -ESHUTDOWN:		/* hardware gone */
 		netif_dbg(dev, ifdown, dev->net,
 			  "rx shutdown, code %d\n", urb_status);
@@ -740,7 +807,7 @@ static void usbnet_terminate_urbs(struct usbnet *dev)
 	while (!skb_queue_empty(&dev->rxq)
 		&& !skb_queue_empty(&dev->txq)
 		&& !skb_queue_empty(&dev->done)) {
-			schedule_timeout(msecs_to_jiffies(UNLINK_TIMEOUT_MS));
+			schedule();
 			set_current_state(TASK_UNINTERRUPTIBLE);
 			netif_dbg(dev, ifdown, dev->net,
 				  "waited for %d urb completions\n", temp);
@@ -1139,6 +1206,17 @@ static void tx_complete (struct urb *urb)
 		if (!(dev->driver_info->flags & FLAG_MULTI_PACKET))
 			dev->net->stats.tx_packets++;
 		dev->net->stats.tx_bytes += entry->length;
+
+		if (is_hsic_modem(urb->dev)) {
+			if (usbnet_data_dump_enable == 1)
+				usbnet_dump(dev, 1, urb->transfer_buffer,
+					urb->actual_length);
+			else if (usbnet_data_dump_enable == 2)
+				usbnet_dump(dev, 1, urb->transfer_buffer,
+					min(urb->actual_length,
+					usbnet_partial_dump_len));
+		}
+
 	} else {
 		dev->net->stats.tx_errors++;
 
@@ -1434,6 +1512,9 @@ void usbnet_disconnect (struct usb_interface *intf)
 	usb_free_urb(dev->interrupt);
 
 	free_netdev(net);
+
+	debugfs_remove_recursive(usbnet_debug_root);
+	usbnet_debug_root = NULL;
 }
 EXPORT_SYMBOL_GPL(usbnet_disconnect);
 
@@ -1520,6 +1601,7 @@ usbnet_probe (struct usb_interface *udev, const struct usb_device_id *prod)
 	init_timer (&dev->delay);
 	mutex_init (&dev->phy_mutex);
 	mutex_init(&dev->interrupt_mutex);
+	init_waitqueue_head(&unlink_wakeup);
 	dev->interrupt_count = 0;
 
 	dev->net = net;
@@ -1613,6 +1695,37 @@ usbnet_probe (struct usb_interface *udev, const struct usb_device_id *prod)
 
 	if (dev->driver_info->flags & FLAG_LINK_INTR)
 		usbnet_link_change(dev, 0, 0);
+
+	if (is_hsic_modem(xdev)) {
+		if (!usbnet_debug_root) {
+			usbnet_debug_root = debugfs_create_dir("net",
+				usb_debug_root);
+
+			if (!usbnet_debug_root)
+				goto out;
+
+			usbnet_debug_data_dump_enable = debugfs_create_u32(
+					"dump_enable",	0644, usbnet_debug_root,
+					&usbnet_data_dump_enable);
+
+			if (!usbnet_debug_data_dump_enable) {
+				debugfs_remove_recursive(usbnet_debug_root);
+				usbnet_debug_root = NULL;
+				goto out;
+			}
+
+			usbnet_debug_partial_dump_len = debugfs_create_u32(
+					"partial_dump_max_len",	0644,
+					usbnet_debug_root,
+					&usbnet_partial_dump_len);
+
+			if (!usbnet_debug_partial_dump_len) {
+				debugfs_remove_recursive(usbnet_debug_root);
+				usbnet_debug_root = NULL;
+				goto out;
+			}
+		}
+	}
 
 	return 0;
 

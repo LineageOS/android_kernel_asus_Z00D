@@ -38,7 +38,7 @@ void suspend_test_finish(const char *label)
 	unsigned msec;
 
 	msec = jiffies_to_msecs(abs(nj));
-	pr_info("PM: %s took %d.%03d seconds\n", label,
+	pr_info("[PM] %s took %d.%03d seconds\n", label,
 			msec / 1000, msec % 1000);
 
 	/* Warning on suspend means the RTC alarm period needs to be
@@ -61,13 +61,13 @@ void suspend_test_finish(const char *label)
 static void __init test_wakealarm(struct rtc_device *rtc, suspend_state_t state)
 {
 	static char err_readtime[] __initdata =
-		KERN_ERR "PM: can't read %s time, err %d\n";
+		KERN_ERR "[PM] can't read %s time, err %d\n";
 	static char err_wakealarm [] __initdata =
-		KERN_ERR "PM: can't set %s wakealarm, err %d\n";
+		KERN_ERR "[PM] can't set %s wakealarm, err %d\n";
 	static char err_suspend[] __initdata =
-		KERN_ERR "PM: suspend test failed, error %d\n";
+		KERN_ERR "[PM] suspend test failed, error %d\n";
 	static char info_test[] __initdata =
-		KERN_INFO "PM: test RTC wakeup from '%s' suspend\n";
+		KERN_INFO "[PM] test RTC wakeup from '%s' suspend\n";
 
 	unsigned long		now;
 	struct rtc_wkalrm	alm;
@@ -132,7 +132,7 @@ static int __init has_wakealarm(struct device *dev, const void *data)
 static suspend_state_t test_state __initdata = PM_SUSPEND_ON;
 
 static char warn_bad_state[] __initdata =
-	KERN_WARNING "PM: can't test '%s' suspend state\n";
+	KERN_WARNING "[PM] can't test '%s' suspend state\n";
 
 static int __init setup_test_suspend(char *value)
 {
@@ -154,7 +154,7 @@ __setup("test_suspend", setup_test_suspend);
 static int __init test_suspend(void)
 {
 	static char		warn_no_rtc[] __initdata =
-		KERN_WARNING "PM: no wakealarm-capable RTC driver is ready\n";
+		KERN_WARNING "[PM] no wakealarm-capable RTC driver is ready\n";
 
 	struct rtc_device	*rtc = NULL;
 	struct device		*dev;

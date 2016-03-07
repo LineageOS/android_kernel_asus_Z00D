@@ -28,6 +28,7 @@
 #include <linux/usb.h>
 #include <linux/usb/quirks.h>
 #include <linux/usb/hcd.h>
+#include <linux/pci.h>
 
 #include "usb.h"
 
@@ -1698,6 +1699,7 @@ static int autosuspend_check(struct usb_device *udev)
 {
 	int			w, i;
 	struct usb_interface	*intf;
+	struct pci_dev *pdev  = to_pci_dev(udev->bus->controller);
 
 	/* Fail if autosuspend is disabled, or any interfaces are in use, or
 	 * any interface drivers require remote wakeup but it isn't available.
@@ -1732,6 +1734,14 @@ static int autosuspend_check(struct usb_device *udev)
 			}
 		}
 	}
+#define ANN_TNG_HSIC_PCI_DEVICE_ID	0x119D
+#define ANN_SSIC_PCI_DEVICE_ID	0x1494
+
+	if (pdev->device == ANN_TNG_HSIC_PCI_DEVICE_ID || pdev->device == ANN_SSIC_PCI_DEVICE_ID) {
+		udev->do_remote_wakeup = device_can_wakeup(&udev->dev);
+		return 0;
+	}
+
 	if (w && !device_can_wakeup(&udev->dev)) {
 		dev_dbg(&udev->dev, "remote wakeup needed for autosuspend\n");
 		return -EOPNOTSUPP;

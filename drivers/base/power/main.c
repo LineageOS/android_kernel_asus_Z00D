@@ -29,6 +29,8 @@
 #include <linux/async.h>
 #include <linux/suspend.h>
 #include <linux/cpuidle.h>
+#include <linux/timer.h>
+
 #include "../base.h"
 #include "power.h"
 
@@ -53,6 +55,12 @@ static LIST_HEAD(dpm_noirq_list);
 struct suspend_stats suspend_stats;
 static DEFINE_MUTEX(dpm_list_mtx);
 static pm_message_t pm_transition;
+
+struct dpm_watchdog {
+	struct device		*dev;
+	struct task_struct	*tsk;
+	struct timer_list	timer;
+};
 
 static int async_error;
 
@@ -345,6 +353,10 @@ static void pm_dev_err(struct device *dev, pm_message_t state, char *info,
 {
 	printk(KERN_ERR "PM: Device %s failed to %s%s: error %d\n",
 		dev_name(dev), pm_verb(state.event), info, error);
+	/* +++ Fixed format for log parser, DO NOT MODIFY +++ */
+	ASUSEvtlog("[PM] Device %s failed to %s%s: error %d\n",
+		dev_name(dev), pm_verb(state.event), info, error);
+	/* --- Fixed format for log parser, DO NOT MODIFY --- */
 }
 
 static void dpm_show_time(ktime_t starttime, pm_message_t state, char *info)
@@ -382,6 +394,56 @@ static int dpm_run_callback(pm_callback_t cb, struct device *dev,
 	initcall_debug_report(dev, calltime, error);
 
 	return error;
+}
+
+/**
+ * dpm_wd_handler - Driver suspend / resume watchdog handler.
+ *
+ * Called when a driver has timed out suspending or resuming.
+ * There's not much we can do here to recover so BUG() out for
+ * a crash-dump
+ */
+static void dpm_wd_handler(unsigned long data)
+{
+	struct dpm_watchdog *wd = (void *)data;
+	struct device *dev      = wd->dev;
+	struct task_struct *tsk = wd->tsk;
+
+	dev_emerg(dev, "**** DPM device timeout ****\n");
+	show_stack(tsk, NULL);
+
+	BUG();
+}
+
+/**
+ * dpm_wd_set - Enable pm watchdog for given device.
+ * @wd: Watchdog. Must be allocated on the stack.
+ * @dev: Device to handle.
+ */
+static void dpm_wd_set(struct dpm_watchdog *wd, struct device *dev)
+{
+	struct timer_list *timer = &wd->timer;
+
+	wd->dev = dev;
+	wd->tsk = get_current();
+
+	init_timer_on_stack(timer);
+	timer->expires = jiffies + HZ * 12;
+	timer->function = dpm_wd_handler;
+	timer->data = (unsigned long)wd;
+	add_timer(timer);
+}
+
+/**
+ * dpm_wd_clear - Disable pm watchdog.
+ * @wd: Watchdog to disable.
+ */
+static void dpm_wd_clear(struct dpm_watchdog *wd)
+{
+	struct timer_list *timer = &wd->timer;
+
+	del_timer_sync(timer);
+	destroy_timer_on_stack(timer);
 }
 
 /*------------------------- Resume routines -------------------------*/
@@ -570,6 +632,7 @@ static int device_resume(struct device *dev, pm_message_t state, bool async)
 	pm_callback_t callback = NULL;
 	char *info = NULL;
 	int error = 0;
+	struct dpm_watchdog wd;
 
 	TRACE_DEVICE(dev);
 	TRACE_RESUME(0);
@@ -585,6 +648,7 @@ static int device_resume(struct device *dev, pm_message_t state, bool async)
 	 * a resumed device, even if the device hasn't been completed yet.
 	 */
 	dev->power.is_prepared = false;
+	dpm_wd_set(&wd, dev);
 
 	if (!dev->power.is_suspended)
 		goto Unlock;
@@ -636,6 +700,7 @@ static int device_resume(struct device *dev, pm_message_t state, bool async)
 
  Unlock:
 	device_unlock(dev);
+	dpm_wd_clear(&wd);
 
  Complete:
 	complete_all(&dev->power.completion);
@@ -1053,28 +1118,43 @@ static int __device_suspend(struct device *dev, pm_message_t state, bool async)
 	pm_callback_t callback = NULL;
 	char *info = NULL;
 	int error = 0;
+	struct dpm_watchdog wd;
+	/* ZE500CL001S */
+	int dev_barrier_wakeup = 0;
+	static char previous_dev[30] = {'\0'};
+	/* ZE500CL001E */
 
 	dpm_wait_for_children(dev, async);
 
 	if (async_error)
 		goto Complete;
 
+	/* ZE500CL001S */
 	/*
 	 * If a device configured to wake up the system from sleep states
 	 * has been suspended at run time and there's a resume request pending
 	 * for it, this is equivalent to the device signaling wakeup, so the
 	 * system suspend operation should be aborted.
 	 */
-	if (pm_runtime_barrier(dev) && device_may_wakeup(dev))
+	if (pm_runtime_barrier(dev) && device_may_wakeup(dev)) {
 		pm_wakeup_event(dev, 0);
+		dev_barrier_wakeup = 1;
+	}
 
 	if (pm_wakeup_pending()) {
 		async_error = -EBUSY;
+		printk(KERN_ERR "[PM] %s: Device %s cause pm_wakeup_pending(), async_error fail: code %d, previous device is %s, dev_barrier_wakeup: %d\n", __func__, dev_name(dev), async_error, previous_dev, dev_barrier_wakeup);
 		goto Complete;
 	}
 
+	strncpy(previous_dev, dev_name(dev), 25);
+	previous_dev[25] = '\0';
+	/* ZE500CL001E */
+
 	if (dev->power.syscore)
 		goto Complete;
+
+	dpm_wd_set(&wd, dev);
 
 	device_lock(dev);
 
@@ -1130,6 +1210,8 @@ static int __device_suspend(struct device *dev, pm_message_t state, bool async)
 	}
 
 	device_unlock(dev);
+
+	dpm_wd_clear(&wd);
 
  Complete:
 	complete_all(&dev->power.completion);

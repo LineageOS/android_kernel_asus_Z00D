@@ -51,6 +51,10 @@
 #define CREATE_TRACE_POINTS
 #include <trace/events/printk.h>
 
+#ifdef CONFIG_EARLY_PRINTK_DIRECT
+extern void printascii(char *);
+#endif
+
 /* printk's without a loglevel use this.. */
 #define DEFAULT_MESSAGE_LOGLEVEL CONFIG_DEFAULT_MESSAGE_LOGLEVEL
 
@@ -255,6 +259,8 @@ static char __log_buf[__LOG_BUF_LEN] __aligned(LOG_ALIGN);
 static char *log_buf = __log_buf;
 static u32 log_buf_len = __LOG_BUF_LEN;
 
+int nSuspendInProgress;
+
 /* cpu currently holding logbuf_lock */
 static volatile unsigned int logbuf_cpu = UINT_MAX;
 
@@ -361,6 +367,13 @@ static void log_store(int facility, int level,
 	/* insert message */
 	log_next_idx += msg->len;
 	log_next_seq++;
+}
+
+/* Clears the ring-buffer */
+void log_buf_clear(void)
+{
+	clear_seq = log_next_seq;
+	clear_idx = log_next_idx;
 }
 
 #ifdef CONFIG_SECURITY_DMESG_RESTRICT
@@ -867,21 +880,67 @@ static bool printk_time = 1;
 static bool printk_time;
 #endif
 module_param_named(time, printk_time, bool, S_IRUGO | S_IWUSR);
-
+#include <linux/rtc.h>
+extern struct timezone sys_tz;
+static void myrtc_time_to_tm(unsigned long time, struct rtc_time *tm)
+{
+	tm->tm_hour = time / 3600;
+	time -= tm->tm_hour * 3600;
+	tm->tm_hour %= 24;
+	tm->tm_min = time / 60;
+	tm->tm_sec = time - tm->tm_min * 60;
+}
+extern int rtc_ready;
+extern int g_BootupUart;
 static size_t print_time(u64 ts, char *buf)
 {
 	unsigned long rem_nsec;
+	struct timespec timespec;
+	struct rtc_time tm;
+	int this_cpu;
+	this_cpu = smp_processor_id();
 
 	if (!printk_time)
 		return 0;
 
 	rem_nsec = do_div(ts, 1000000000);
 
+	if (ts > 40 && !g_BootupUart)
+		g_BootupUart = 1;
+
 	if (!buf)
 		return snprintf(NULL, 0, "[%5lu.000000] ", (unsigned long)ts);
 
-	return sprintf(buf, "[%5lu.%06lu] ",
-		       (unsigned long)ts, rem_nsec / 1000);
+	if (rtc_ready && !nSuspendInProgress) {
+
+		getnstimeofday(&timespec);
+
+		timespec.tv_sec -= sys_tz.tz_minuteswest * 60;
+
+		myrtc_time_to_tm(timespec.tv_sec, &tm);
+
+		if (!buf)
+			return snprintf(NULL, 0, "[%5lu.000000] ", (unsigned long)ts);
+
+		return sprintf(buf, "[%5lu.%06lu] (CPU:%d-pid:%d:%s) [%02d:%02d:%02d.%09lu] ",
+			(unsigned long)ts,
+			rem_nsec / 1000,
+			this_cpu,
+			current->pid,
+			current->comm,
+			tm.tm_hour, tm.tm_min, tm.tm_sec, timespec.tv_nsec);
+	} else {
+		if (current) {
+			return sprintf(buf, "[%5lu.%06lu] (CPU:%d-pid:%d:%s)",
+				(unsigned long)ts, rem_nsec / 1000,
+				this_cpu,
+				current->pid,
+				current->comm);
+		}
+		return sprintf(buf, "[%5lu.%06lu]",
+			(unsigned long)ts, rem_nsec / 1000);
+
+	}
 }
 
 static size_t print_prefix(const struct log *msg, bool syslog, char *buf)
@@ -903,7 +962,7 @@ static size_t print_prefix(const struct log *msg, bool syslog, char *buf)
 		}
 	}
 
-	len += print_time(msg->ts_nsec, buf ? buf + len : NULL);
+	/*len += print_time(msg->ts_nsec, buf ? buf + len : NULL);*/
 	return len;
 }
 
@@ -1272,8 +1331,6 @@ static void call_console_drivers(int level, const char *text, size_t len)
 
 	trace_console_rcuidle(text, len);
 
-	if (level >= console_loglevel && !ignore_loglevel)
-		return;
 	if (!console_drivers)
 		return;
 
@@ -1286,6 +1343,9 @@ static void call_console_drivers(int level, const char *text, size_t len)
 			continue;
 		if (!cpu_online(smp_processor_id()) &&
 		    !(con->flags & CON_ANYTIME))
+			continue;
+		if ((level >= console_loglevel) &&
+		    (!(con->flags & CON_IGNORELEVEL)) && (!ignore_loglevel))
 			continue;
 		con->write(con, text, len);
 	}
@@ -1353,7 +1413,7 @@ static int console_trylock_for_printk(unsigned int cpu)
 {
 	int retval = 0, wake = 0;
 
-	if (console_trylock()) {
+	if (!in_nmi() && console_trylock()) {
 		retval = 1;
 
 		/*
@@ -1471,7 +1531,7 @@ static size_t cont_print_text(char *text, size_t size)
 	size_t len;
 
 	if (cont.cons == 0 && (console_prev & LOG_NEWLINE)) {
-		textlen += print_time(cont.ts_nsec, text);
+		/*textlen += print_time(cont.ts_nsec, text);*/
 		size -= textlen;
 	}
 
@@ -1499,12 +1559,17 @@ asmlinkage int vprintk_emit(int facility, int level,
 {
 	static int recursion_bug;
 	static char textbuf[LOG_LINE_MAX];
+	static char textbuf1[LOG_LINE_MAX];
 	char *text = textbuf;
+	char *text1 = textbuf1;
 	size_t text_len;
 	enum log_flags lflags = 0;
 	unsigned long flags;
 	int this_cpu;
 	int printed_len = 0;
+	u64 ts = 0;
+	char time_buf[512];
+	size_t time_size = 0;
 
 	boot_delay_msec(level);
 	printk_delay();
@@ -1532,7 +1597,13 @@ asmlinkage int vprintk_emit(int facility, int level,
 	}
 
 	lockdep_off();
-	raw_spin_lock(&logbuf_lock);
+	if (unlikely(in_nmi())) {
+		if (!raw_spin_trylock(&logbuf_lock))
+			goto out_restore_lockdep_irqs;
+	} else {
+		raw_spin_lock(&logbuf_lock);
+	}
+
 	logbuf_cpu = this_cpu;
 
 	if (recursion_bug) {
@@ -1550,20 +1621,20 @@ asmlinkage int vprintk_emit(int facility, int level,
 	 * The printf needs to come first; we need the syslog
 	 * prefix which might be passed-in as a parameter.
 	 */
-	text_len = vscnprintf(text, sizeof(textbuf), fmt, args);
+	text_len = vscnprintf(text1, sizeof(textbuf1), fmt, args);
 
 	/* mark and strip a trailing newline */
-	if (text_len && text[text_len-1] == '\n') {
+	if (text_len && text1[text_len-1] == '\n') {
 		text_len--;
 		lflags |= LOG_NEWLINE;
 	}
 
 	/* strip kernel syslog prefix and extract log level or control flags */
 	if (facility == 0) {
-		int kern_level = printk_get_level(text);
+		int kern_level = printk_get_level(text1);
 
 		if (kern_level) {
-			const char *end_of_header = printk_skip_level(text);
+			const char *end_of_header = printk_skip_level(text1);
 			switch (kern_level) {
 			case '0' ... '7':
 				if (level == -1)
@@ -1573,10 +1644,22 @@ asmlinkage int vprintk_emit(int facility, int level,
 			case 'c':	/* KERN_CONT */
 				break;
 			}
-			text_len -= end_of_header - text;
-			text = (char *)end_of_header;
+			text_len -= end_of_header - text1;
+			text1 = (char *)end_of_header;
 		}
 	}
+
+#ifdef CONFIG_EARLY_PRINTK_DIRECT
+	printascii(text1);
+#endif
+#if 1
+	ts = local_clock();
+	time_size = print_time(ts, time_buf);
+	strncpy(text, time_buf, time_size);
+#endif
+	strncpy(text+time_size, text1, text_len);
+
+	text_len += time_size;
 
 	if (level == -1)
 		level = default_message_loglevel;
@@ -1594,7 +1677,7 @@ asmlinkage int vprintk_emit(int facility, int level,
 
 		/* buffer line if possible, otherwise store it right away */
 		if (!cont_add(facility, level, text, text_len))
-			log_store(facility, level, lflags | LOG_CONT, 0,
+			log_store(facility, level, lflags | LOG_CONT, ts,
 				  dict, dictlen, text, text_len);
 	} else {
 		bool stored = false;
@@ -1612,7 +1695,7 @@ asmlinkage int vprintk_emit(int facility, int level,
 		}
 
 		if (!stored)
-			log_store(facility, level, lflags, 0,
+			log_store(facility, level, lflags, ts,
 				  dict, dictlen, text, text_len);
 	}
 	printed_len += text_len;
@@ -1628,6 +1711,7 @@ asmlinkage int vprintk_emit(int facility, int level,
 	if (console_trylock_for_printk(this_cpu))
 		console_unlock();
 
+out_restore_lockdep_irqs:
 	lockdep_on();
 out_restore_irqs:
 	local_irq_restore(flags);
@@ -1681,7 +1765,7 @@ EXPORT_SYMBOL(printk_emit);
 asmlinkage int printk(const char *fmt, ...)
 {
 	va_list args;
-	int r;
+	int r = 0;
 
 #ifdef CONFIG_KGDB_KDB
 	if (unlikely(kdb_trap_printk)) {
@@ -1893,9 +1977,13 @@ MODULE_PARM_DESC(console_suspend, "suspend console during suspend"
  */
 void suspend_console(void)
 {
+	/* +++ Fixed format for log parser, DO NOT MODIFY +++ */
+	ASUSEvtlog("[UTS] System Suspend");
+	/* --- Fixed format for log parser, DO NOT MODIFY --- */
+	nSuspendInProgress = 1;
 	if (!console_suspend_enabled)
 		return;
-	printk("Suspending console(s) (use no_console_suspend to debug)\n");
+	printk("[PM] Suspending console(s) (use no_console_suspend to debug)\n");
 	console_lock();
 	console_suspended = 1;
 	up(&console_sem);
@@ -1903,6 +1991,11 @@ void suspend_console(void)
 
 void resume_console(void)
 {
+	/* +++ Fixed format for log parser, DO NOT MODIFY +++ */
+	ASUSEvtlog("[UTS] System Resume");
+	/* --- Fixed format for log parser, DO NOT MODIFY --- */
+
+	nSuspendInProgress = 0;
 	if (!console_suspend_enabled)
 		return;
 	down(&console_sem);

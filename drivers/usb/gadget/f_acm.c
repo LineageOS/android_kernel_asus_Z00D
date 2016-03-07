@@ -752,7 +752,6 @@ static struct usb_function *acm_alloc_func(struct usb_function_instance *fi)
 	acm->port.send_break = acm_send_break;
 
 	acm->port.func.name = "acm";
-	acm->port.func.strings = acm_strings;
 	/* descriptors are per-instance copies */
 	acm->port.func.bind = acm_bind;
 	acm->port.func.set_alt = acm_set_alt;

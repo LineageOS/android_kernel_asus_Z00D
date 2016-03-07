@@ -14,6 +14,7 @@
 #include <linux/dynamic_debug.h>
 #include <asm/byteorder.h>
 #include <uapi/linux/kernel.h>
+#include <linux/asusdebug.h>
 
 #define USHRT_MAX	((u16)(~0U))
 #define SHRT_MAX	((s16)(USHRT_MAX>>1))
@@ -804,5 +805,8 @@ static inline void ftrace_dump(enum ftrace_dump_mode oops_dump_mode) { }
 #ifdef CONFIG_FTRACE_MCOUNT_RECORD
 # define REBUILD_DUE_TO_FTRACE_MCOUNT_RECORD
 #endif
+
+/* To identify board information in panic logs, set this */
+extern char *mach_panic_string;
 
 #endif

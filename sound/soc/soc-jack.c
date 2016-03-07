@@ -10,7 +10,7 @@
  *  Free Software Foundation;  either version 2 of the  License, or (at your
  *  option) any later version.
  */
-
+#define DEBUG 1
 #include <sound/jack.h>
 #include <sound/soc.h>
 #include <linux/gpio.h>
@@ -19,6 +19,9 @@
 #include <linux/delay.h>
 #include <linux/export.h>
 #include <trace/events/asoc.h>
+/*+++ASUS_BSP : Eric*/
+#define GPIO_HS_PATH 172
+/*---ASUS_BSP : Eric*/
 
 /**
  * snd_soc_jack_new - Create a new jack
@@ -65,8 +68,13 @@ void snd_soc_jack_report(struct snd_soc_jack *jack, int status, int mask)
 	struct snd_soc_codec *codec;
 	struct snd_soc_dapm_context *dapm;
 	struct snd_soc_jack_pin *pin;
+	unsigned int sync = 0;
 	int enable;
+	/* Skip the jack detect if the GPIO pin didn't pull high */
+	if (!gpio_get_value(GPIO_HS_PATH)) /* ASUS_BSP Paul +++ */
+		return;
 
+	pr_debug("%s , status = %x , mask = %x \n", __func__ , status , mask);
 	trace_snd_soc_jack_report(jack, mask, status);
 
 	if (!jack)
@@ -92,12 +100,16 @@ void snd_soc_jack_report(struct snd_soc_jack *jack, int status, int mask)
 			snd_soc_dapm_enable_pin(dapm, pin->pin);
 		else
 			snd_soc_dapm_disable_pin(dapm, pin->pin);
+
+		/* we need to sync for this case only */
+		sync = 1;
 	}
 
 	/* Report before the DAPM sync to help users updating micbias status */
 	blocking_notifier_call_chain(&jack->notifier, jack->status, jack);
 
-	snd_soc_dapm_sync(dapm);
+	if (sync)
+		snd_soc_dapm_sync(dapm);
 
 	snd_jack_report(jack->jack, jack->status);
 
@@ -318,10 +330,13 @@ int snd_soc_jack_add_gpios(struct snd_soc_jack *jack, int count,
 		INIT_DELAYED_WORK(&gpios[i].work, gpio_work);
 		gpios[i].jack = jack;
 
+		if (!gpios[i].irq_flags)
+			gpios[i].irq_flags =
+				IRQF_TRIGGER_RISING | IRQF_TRIGGER_FALLING;
+
 		ret = request_any_context_irq(gpio_to_irq(gpios[i].gpio),
 					      gpio_handler,
-					      IRQF_TRIGGER_RISING |
-					      IRQF_TRIGGER_FALLING,
+					      gpios[i].irq_flags,
 					      gpios[i].name,
 					      &gpios[i]);
 		if (ret < 0)

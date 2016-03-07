@@ -3,7 +3,8 @@
 #
 
 # Each configuration option enables a list of files.
-
+# ftxxxx-objs += ftxxxx_ts.o ftxxxx_ex_fun.o focaltech_ctl.o ini.o test_lib.o
+ftxxxx-objs += ftxxxx_ts.o ftxxxx_ex_fun.o focaltech_ctl.o ../../../source/drivers/input/touchscreen/libtest.a
 wm97xx-ts-y := wm97xx-core.o
 
 obj-$(CONFIG_TOUCHSCREEN_88PM860X)	+= 88pm860x-ts.o
@@ -72,3 +73,5 @@ obj-$(CONFIG_TOUCHSCREEN_WM97XX_MAINSTONE)	+= mainstone-wm97xx.o
 obj-$(CONFIG_TOUCHSCREEN_WM97XX_ZYLONITE)	+= zylonite-wm97xx.o
 obj-$(CONFIG_TOUCHSCREEN_W90X900)	+= w90p910_ts.o
 obj-$(CONFIG_TOUCHSCREEN_TPS6507X)	+= tps6507x-ts.o
+obj-$(CONFIG_TOUCHSCREEN_HIMAX_HX8528_ME372CL) += hx8528_me372cl.o
+obj-$(CONFIG_TOUCHSCREEN_FT3X17) += ftxxxx.o

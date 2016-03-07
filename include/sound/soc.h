@@ -26,262 +26,9 @@
 #include <sound/compress_driver.h>
 #include <sound/control.h>
 #include <sound/ac97_codec.h>
+#include <sound/effect_driver.h>
 
-/*
- * Convenience kcontrol builders
- */
-#define SOC_DOUBLE_VALUE(xreg, shift_left, shift_right, xmax, xinvert) \
-	((unsigned long)&(struct soc_mixer_control) \
-	{.reg = xreg, .rreg = xreg, .shift = shift_left, \
-	.rshift = shift_right, .max = xmax, .platform_max = xmax, \
-	.invert = xinvert})
-#define SOC_SINGLE_VALUE(xreg, xshift, xmax, xinvert) \
-	SOC_DOUBLE_VALUE(xreg, xshift, xshift, xmax, xinvert)
-#define SOC_SINGLE_VALUE_EXT(xreg, xmax, xinvert) \
-	((unsigned long)&(struct soc_mixer_control) \
-	{.reg = xreg, .max = xmax, .platform_max = xmax, .invert = xinvert})
-#define SOC_DOUBLE_R_VALUE(xlreg, xrreg, xshift, xmax, xinvert) \
-	((unsigned long)&(struct soc_mixer_control) \
-	{.reg = xlreg, .rreg = xrreg, .shift = xshift, .rshift = xshift, \
-	.max = xmax, .platform_max = xmax, .invert = xinvert})
-#define SOC_DOUBLE_R_RANGE_VALUE(xlreg, xrreg, xshift, xmin, xmax, xinvert) \
-	((unsigned long)&(struct soc_mixer_control) \
-	{.reg = xlreg, .rreg = xrreg, .shift = xshift, .rshift = xshift, \
-	.min = xmin, .max = xmax, .platform_max = xmax, .invert = xinvert})
-#define SOC_SINGLE(xname, reg, shift, max, invert) \
-{	.iface = SNDRV_CTL_ELEM_IFACE_MIXER, .name = xname, \
-	.info = snd_soc_info_volsw, .get = snd_soc_get_volsw,\
-	.put = snd_soc_put_volsw, \
-	.private_value =  SOC_SINGLE_VALUE(reg, shift, max, invert) }
-#define SOC_SINGLE_RANGE(xname, xreg, xshift, xmin, xmax, xinvert) \
-{	.iface = SNDRV_CTL_ELEM_IFACE_MIXER, .name = (xname),\
-	.info = snd_soc_info_volsw_range, .get = snd_soc_get_volsw_range, \
-	.put = snd_soc_put_volsw_range, \
-	.private_value = (unsigned long)&(struct soc_mixer_control) \
-		{.reg = xreg, .rreg = xreg, .shift = xshift, \
-		 .rshift = xshift,  .min = xmin, .max = xmax, \
-		 .platform_max = xmax, .invert = xinvert} }
-#define SOC_SINGLE_TLV(xname, reg, shift, max, invert, tlv_array) \
-{	.iface = SNDRV_CTL_ELEM_IFACE_MIXER, .name = xname, \
-	.access = SNDRV_CTL_ELEM_ACCESS_TLV_READ |\
-		 SNDRV_CTL_ELEM_ACCESS_READWRITE,\
-	.tlv.p = (tlv_array), \
-	.info = snd_soc_info_volsw, .get = snd_soc_get_volsw,\
-	.put = snd_soc_put_volsw, \
-	.private_value =  SOC_SINGLE_VALUE(reg, shift, max, invert) }
-#define SOC_SINGLE_SX_TLV(xname, xreg, xshift, xmin, xmax, tlv_array) \
-{       .iface = SNDRV_CTL_ELEM_IFACE_MIXER, .name = xname, \
-	.access = SNDRV_CTL_ELEM_ACCESS_TLV_READ | \
-	SNDRV_CTL_ELEM_ACCESS_READWRITE, \
-	.tlv.p  = (tlv_array),\
-	.info = snd_soc_info_volsw, \
-	.get = snd_soc_get_volsw_sx,\
-	.put = snd_soc_put_volsw_sx, \
-	.private_value = (unsigned long)&(struct soc_mixer_control) \
-		{.reg = xreg, .rreg = xreg, \
-		.shift = xshift, .rshift = xshift, \
-		.max = xmax, .min = xmin} }
-#define SOC_SINGLE_RANGE_TLV(xname, xreg, xshift, xmin, xmax, xinvert, tlv_array) \
-{	.iface = SNDRV_CTL_ELEM_IFACE_MIXER, .name = (xname),\
-	.access = SNDRV_CTL_ELEM_ACCESS_TLV_READ |\
-		 SNDRV_CTL_ELEM_ACCESS_READWRITE,\
-	.tlv.p = (tlv_array), \
-	.info = snd_soc_info_volsw_range, \
-	.get = snd_soc_get_volsw_range, .put = snd_soc_put_volsw_range, \
-	.private_value = (unsigned long)&(struct soc_mixer_control) \
-		{.reg = xreg, .rreg = xreg, .shift = xshift, \
-		 .rshift = xshift, .min = xmin, .max = xmax, \
-		 .platform_max = xmax, .invert = xinvert} }
-#define SOC_DOUBLE(xname, reg, shift_left, shift_right, max, invert) \
-{	.iface = SNDRV_CTL_ELEM_IFACE_MIXER, .name = (xname),\
-	.info = snd_soc_info_volsw, .get = snd_soc_get_volsw, \
-	.put = snd_soc_put_volsw, \
-	.private_value = SOC_DOUBLE_VALUE(reg, shift_left, shift_right, \
-					  max, invert) }
-#define SOC_DOUBLE_R(xname, reg_left, reg_right, xshift, xmax, xinvert) \
-{	.iface = SNDRV_CTL_ELEM_IFACE_MIXER, .name = (xname), \
-	.info = snd_soc_info_volsw, \
-	.get = snd_soc_get_volsw, .put = snd_soc_put_volsw, \
-	.private_value = SOC_DOUBLE_R_VALUE(reg_left, reg_right, xshift, \
-					    xmax, xinvert) }
-#define SOC_DOUBLE_R_RANGE(xname, reg_left, reg_right, xshift, xmin, \
-			   xmax, xinvert)		\
-{	.iface = SNDRV_CTL_ELEM_IFACE_MIXER, .name = (xname),\
-	.info = snd_soc_info_volsw_range, \
-	.get = snd_soc_get_volsw_range, .put = snd_soc_put_volsw_range, \
-	.private_value = SOC_DOUBLE_R_RANGE_VALUE(reg_left, reg_right, \
-					    xshift, xmin, xmax, xinvert) }
-#define SOC_DOUBLE_TLV(xname, reg, shift_left, shift_right, max, invert, tlv_array) \
-{	.iface = SNDRV_CTL_ELEM_IFACE_MIXER, .name = (xname),\
-	.access = SNDRV_CTL_ELEM_ACCESS_TLV_READ |\
-		 SNDRV_CTL_ELEM_ACCESS_READWRITE,\
-	.tlv.p = (tlv_array), \
-	.info = snd_soc_info_volsw, .get = snd_soc_get_volsw, \
-	.put = snd_soc_put_volsw, \
-	.private_value = SOC_DOUBLE_VALUE(reg, shift_left, shift_right, \
-					  max, invert) }
-#define SOC_DOUBLE_R_TLV(xname, reg_left, reg_right, xshift, xmax, xinvert, tlv_array) \
-{	.iface = SNDRV_CTL_ELEM_IFACE_MIXER, .name = (xname),\
-	.access = SNDRV_CTL_ELEM_ACCESS_TLV_READ |\
-		 SNDRV_CTL_ELEM_ACCESS_READWRITE,\
-	.tlv.p = (tlv_array), \
-	.info = snd_soc_info_volsw, \
-	.get = snd_soc_get_volsw, .put = snd_soc_put_volsw, \
-	.private_value = SOC_DOUBLE_R_VALUE(reg_left, reg_right, xshift, \
-					    xmax, xinvert) }
-#define SOC_DOUBLE_R_RANGE_TLV(xname, reg_left, reg_right, xshift, xmin, \
-			       xmax, xinvert, tlv_array)		\
-{	.iface = SNDRV_CTL_ELEM_IFACE_MIXER, .name = (xname),\
-	.access = SNDRV_CTL_ELEM_ACCESS_TLV_READ |\
-		 SNDRV_CTL_ELEM_ACCESS_READWRITE,\
-	.tlv.p = (tlv_array), \
-	.info = snd_soc_info_volsw_range, \
-	.get = snd_soc_get_volsw_range, .put = snd_soc_put_volsw_range, \
-	.private_value = SOC_DOUBLE_R_RANGE_VALUE(reg_left, reg_right, \
-					    xshift, xmin, xmax, xinvert) }
-#define SOC_DOUBLE_R_SX_TLV(xname, xreg, xrreg, xshift, xmin, xmax, tlv_array) \
-{       .iface = SNDRV_CTL_ELEM_IFACE_MIXER, .name = (xname), \
-	.access = SNDRV_CTL_ELEM_ACCESS_TLV_READ | \
-	SNDRV_CTL_ELEM_ACCESS_READWRITE, \
-	.tlv.p  = (tlv_array), \
-	.info = snd_soc_info_volsw, \
-	.get = snd_soc_get_volsw_sx, \
-	.put = snd_soc_put_volsw_sx, \
-	.private_value = (unsigned long)&(struct soc_mixer_control) \
-		{.reg = xreg, .rreg = xrreg, \
-		.shift = xshift, .rshift = xshift, \
-		.max = xmax, .min = xmin} }
-#define SOC_DOUBLE_S8_TLV(xname, xreg, xmin, xmax, tlv_array) \
-{	.iface  = SNDRV_CTL_ELEM_IFACE_MIXER, .name = (xname), \
-	.access = SNDRV_CTL_ELEM_ACCESS_TLV_READ | \
-		  SNDRV_CTL_ELEM_ACCESS_READWRITE, \
-	.tlv.p  = (tlv_array), \
-	.info   = snd_soc_info_volsw_s8, .get = snd_soc_get_volsw_s8, \
-	.put    = snd_soc_put_volsw_s8, \
-	.private_value = (unsigned long)&(struct soc_mixer_control) \
-		{.reg = xreg, .min = xmin, .max = xmax, \
-		 .platform_max = xmax} }
-#define SOC_ENUM_DOUBLE(xreg, xshift_l, xshift_r, xmax, xtexts) \
-{	.reg = xreg, .shift_l = xshift_l, .shift_r = xshift_r, \
-	.max = xmax, .texts = xtexts, \
-	.mask = xmax ? roundup_pow_of_two(xmax) - 1 : 0}
-#define SOC_ENUM_SINGLE(xreg, xshift, xmax, xtexts) \
-	SOC_ENUM_DOUBLE(xreg, xshift, xshift, xmax, xtexts)
-#define SOC_ENUM_SINGLE_EXT(xmax, xtexts) \
-{	.max = xmax, .texts = xtexts }
-#define SOC_VALUE_ENUM_DOUBLE(xreg, xshift_l, xshift_r, xmask, xmax, xtexts, xvalues) \
-{	.reg = xreg, .shift_l = xshift_l, .shift_r = xshift_r, \
-	.mask = xmask, .max = xmax, .texts = xtexts, .values = xvalues}
-#define SOC_VALUE_ENUM_SINGLE(xreg, xshift, xmask, xmax, xtexts, xvalues) \
-	SOC_VALUE_ENUM_DOUBLE(xreg, xshift, xshift, xmask, xmax, xtexts, xvalues)
-#define SOC_ENUM(xname, xenum) \
-{	.iface = SNDRV_CTL_ELEM_IFACE_MIXER, .name = xname,\
-	.info = snd_soc_info_enum_double, \
-	.get = snd_soc_get_enum_double, .put = snd_soc_put_enum_double, \
-	.private_value = (unsigned long)&xenum }
-#define SOC_VALUE_ENUM(xname, xenum) \
-{	.iface = SNDRV_CTL_ELEM_IFACE_MIXER, .name = xname,\
-	.info = snd_soc_info_enum_double, \
-	.get = snd_soc_get_value_enum_double, \
-	.put = snd_soc_put_value_enum_double, \
-	.private_value = (unsigned long)&xenum }
-#define SOC_SINGLE_EXT(xname, xreg, xshift, xmax, xinvert,\
-	 xhandler_get, xhandler_put) \
-{	.iface = SNDRV_CTL_ELEM_IFACE_MIXER, .name = xname, \
-	.info = snd_soc_info_volsw, \
-	.get = xhandler_get, .put = xhandler_put, \
-	.private_value = SOC_SINGLE_VALUE(xreg, xshift, xmax, xinvert) }
-#define SOC_DOUBLE_EXT(xname, reg, shift_left, shift_right, max, invert,\
-	 xhandler_get, xhandler_put) \
-{	.iface = SNDRV_CTL_ELEM_IFACE_MIXER, .name = (xname),\
-	.info = snd_soc_info_volsw, \
-	.get = xhandler_get, .put = xhandler_put, \
-	.private_value = \
-		SOC_DOUBLE_VALUE(reg, shift_left, shift_right, max, invert) }
-#define SOC_SINGLE_EXT_TLV(xname, xreg, xshift, xmax, xinvert,\
-	 xhandler_get, xhandler_put, tlv_array) \
-{	.iface = SNDRV_CTL_ELEM_IFACE_MIXER, .name = xname, \
-	.access = SNDRV_CTL_ELEM_ACCESS_TLV_READ |\
-		 SNDRV_CTL_ELEM_ACCESS_READWRITE,\
-	.tlv.p = (tlv_array), \
-	.info = snd_soc_info_volsw, \
-	.get = xhandler_get, .put = xhandler_put, \
-	.private_value = SOC_SINGLE_VALUE(xreg, xshift, xmax, xinvert) }
-#define SOC_DOUBLE_EXT_TLV(xname, xreg, shift_left, shift_right, xmax, xinvert,\
-	 xhandler_get, xhandler_put, tlv_array) \
-{	.iface = SNDRV_CTL_ELEM_IFACE_MIXER, .name = (xname), \
-	.access = SNDRV_CTL_ELEM_ACCESS_TLV_READ | \
-		 SNDRV_CTL_ELEM_ACCESS_READWRITE, \
-	.tlv.p = (tlv_array), \
-	.info = snd_soc_info_volsw, \
-	.get = xhandler_get, .put = xhandler_put, \
-	.private_value = SOC_DOUBLE_VALUE(xreg, shift_left, shift_right, \
-					  xmax, xinvert) }
-#define SOC_DOUBLE_R_EXT_TLV(xname, reg_left, reg_right, xshift, xmax, xinvert,\
-	 xhandler_get, xhandler_put, tlv_array) \
-{	.iface = SNDRV_CTL_ELEM_IFACE_MIXER, .name = (xname), \
-	.access = SNDRV_CTL_ELEM_ACCESS_TLV_READ | \
-		 SNDRV_CTL_ELEM_ACCESS_READWRITE, \
-	.tlv.p = (tlv_array), \
-	.info = snd_soc_info_volsw, \
-	.get = xhandler_get, .put = xhandler_put, \
-	.private_value = SOC_DOUBLE_R_VALUE(reg_left, reg_right, xshift, \
-					    xmax, xinvert) }
-#define SOC_SINGLE_BOOL_EXT(xname, xdata, xhandler_get, xhandler_put) \
-{	.iface = SNDRV_CTL_ELEM_IFACE_MIXER, .name = xname, \
-	.info = snd_soc_info_bool_ext, \
-	.get = xhandler_get, .put = xhandler_put, \
-	.private_value = xdata }
-#define SOC_ENUM_EXT(xname, xenum, xhandler_get, xhandler_put) \
-{	.iface = SNDRV_CTL_ELEM_IFACE_MIXER, .name = xname, \
-	.info = snd_soc_info_enum_ext, \
-	.get = xhandler_get, .put = xhandler_put, \
-	.private_value = (unsigned long)&xenum }
-
-#define SND_SOC_BYTES(xname, xbase, xregs)		      \
-{	.iface = SNDRV_CTL_ELEM_IFACE_MIXER, .name = xname,   \
-	.info = snd_soc_bytes_info, .get = snd_soc_bytes_get, \
-	.put = snd_soc_bytes_put, .private_value =	      \
-		((unsigned long)&(struct soc_bytes)           \
-		{.base = xbase, .num_regs = xregs }) }
-
-#define SND_SOC_BYTES_MASK(xname, xbase, xregs, xmask)	      \
-{	.iface = SNDRV_CTL_ELEM_IFACE_MIXER, .name = xname,   \
-	.info = snd_soc_bytes_info, .get = snd_soc_bytes_get, \
-	.put = snd_soc_bytes_put, .private_value =	      \
-		((unsigned long)&(struct soc_bytes)           \
-		{.base = xbase, .num_regs = xregs,	      \
-		 .mask = xmask }) }
-
-#define SOC_SINGLE_XR_SX(xname, xregbase, xregcount, xnbits, \
-		xmin, xmax, xinvert) \
-{	.iface = SNDRV_CTL_ELEM_IFACE_MIXER, .name = (xname), \
-	.info = snd_soc_info_xr_sx, .get = snd_soc_get_xr_sx, \
-	.put = snd_soc_put_xr_sx, \
-	.private_value = (unsigned long)&(struct soc_mreg_control) \
-		{.regbase = xregbase, .regcount = xregcount, .nbits = xnbits, \
-		.invert = xinvert, .min = xmin, .max = xmax} }
-
-#define SOC_SINGLE_STROBE(xname, xreg, xshift, xinvert) \
-	SOC_SINGLE_EXT(xname, xreg, xshift, 1, xinvert, \
-		snd_soc_get_strobe, snd_soc_put_strobe)
-
-/*
- * Simplified versions of above macros, declaring a struct and calculating
- * ARRAY_SIZE internally
- */
-#define SOC_ENUM_DOUBLE_DECL(name, xreg, xshift_l, xshift_r, xtexts) \
-	struct soc_enum name = SOC_ENUM_DOUBLE(xreg, xshift_l, xshift_r, \
-						ARRAY_SIZE(xtexts), xtexts)
-#define SOC_ENUM_SINGLE_DECL(name, xreg, xshift, xtexts) \
-	SOC_ENUM_DOUBLE_DECL(name, xreg, xshift, xshift, xtexts)
-#define SOC_ENUM_SINGLE_EXT_DECL(name, xtexts) \
-	struct soc_enum name = SOC_ENUM_SINGLE_EXT(ARRAY_SIZE(xtexts), xtexts)
-#define SOC_VALUE_ENUM_DOUBLE_DECL(name, xreg, xshift_l, xshift_r, xmask, xtexts, xvalues) \
-	struct soc_enum name = SOC_VALUE_ENUM_DOUBLE(xreg, xshift_l, xshift_r, xmask, \
-							ARRAY_SIZE(xtexts), xtexts, xvalues)
-#define SOC_VALUE_ENUM_SINGLE_DECL(name, xreg, xshift, xmask, xtexts, xvalues) \
-	SOC_VALUE_ENUM_DOUBLE_DECL(name, xreg, xshift, xshift, xmask, xtexts, xvalues)
+#include <uapi/sound/asoc.h>
 
 /*
  * Component probe and remove ordering levels for components with runtime
@@ -292,6 +39,10 @@
 #define SND_SOC_COMP_ORDER_NORMAL		0
 #define SND_SOC_COMP_ORDER_LATE		1
 #define SND_SOC_COMP_ORDER_LAST		2
+
+#define snd_soc_get_enum_text(soc_enum, idx) \
+	(soc_enum->texts ? soc_enum->texts[idx] : soc_enum->dtexts[idx])
+
 
 /*
  * Bias levels
@@ -323,6 +74,7 @@ struct snd_soc_platform;
 struct snd_soc_dai_link;
 struct snd_soc_platform_driver;
 struct snd_soc_codec;
+
 struct snd_soc_codec_driver;
 struct snd_soc_component;
 struct snd_soc_component_driver;
@@ -420,6 +172,21 @@ struct snd_pcm_substream *snd_soc_get_dai_substream(struct snd_soc_card *card,
 		const char *dai_link, int stream);
 struct snd_soc_pcm_runtime *snd_soc_get_pcm_runtime(struct snd_soc_card *card,
 		const char *dai_link);
+#if IS_ENABLED(CONFIG_SND_EFFECTS_OFFLOAD)
+int snd_soc_register_effect(struct snd_soc_card *card,
+				struct snd_effect_ops *ops);
+int snd_soc_unregister_effect(struct snd_soc_card *card);
+#else
+static inline int snd_soc_register_effect(struct snd_soc_card *card,
+					struct snd_effect_ops *ops)
+{
+	return -ENODEV;
+}
+static inline int snd_soc_unregister_effect(struct snd_soc_card *card)
+{
+	return -ENODEV;
+}
+#endif
 
 /* Utility functions to get clock rates from various things */
 int snd_soc_calc_frame_size(int sample_size, int channels, int tdm_slots);
@@ -473,6 +240,8 @@ void snd_soc_free_ac97_codec(struct snd_soc_codec *codec);
 struct snd_kcontrol *snd_soc_cnew(const struct snd_kcontrol_new *_template,
 				  void *data, const char *long_name,
 				  const char *prefix);
+struct snd_kcontrol *snd_soc_card_get_kcontrol(struct snd_soc_card *soc_card,
+					       const char *name);
 int snd_soc_add_codec_controls(struct snd_soc_codec *codec,
 	const struct snd_kcontrol_new *controls, int num_controls);
 int snd_soc_add_platform_controls(struct snd_soc_platform *platform,
@@ -538,6 +307,8 @@ int snd_soc_get_strobe(struct snd_kcontrol *kcontrol,
 	struct snd_ctl_elem_value *ucontrol);
 int snd_soc_put_strobe(struct snd_kcontrol *kcontrol,
 	struct snd_ctl_elem_value *ucontrol);
+int snd_soc_info_bytes_ext(struct snd_kcontrol *kcontrol,
+	struct snd_ctl_elem_info *ucontrol);
 
 /**
  * struct snd_soc_reg_access - Describes whether a given register is
@@ -594,6 +365,7 @@ struct snd_soc_jack_zone {
  * @name:         gpio name
  * @report:       value to report when jack detected
  * @invert:       report presence in low state
+ * @irq_flag:	  Interrupt flags for GPIO-Irq line
  * @debouce_time: debouce time in ms
  * @wake:	  enable as wake source
  * @jack_status_check: callback function which overrides the detection
@@ -608,6 +380,7 @@ struct snd_soc_jack_gpio {
 	int invert;
 	int debounce_time;
 	bool wake;
+	unsigned long irq_flags;
 
 	struct snd_soc_jack *jack;
 	struct delayed_work work;
@@ -719,6 +492,10 @@ struct snd_soc_codec {
 	struct snd_soc_dapm_context dapm;
 	unsigned int ignore_pmdown_time:1; /* pmdown_time is ignored at stop */
 
+	/* dynamic mixer and enum controls */
+	struct list_head dmixers;
+	struct list_head denums;
+	struct list_head dbytes;
 #ifdef CONFIG_DEBUG_FS
 	struct dentry *debugfs_codec_root;
 	struct dentry *debugfs_reg;
@@ -843,6 +620,10 @@ struct snd_soc_platform {
 	struct list_head list;
 	struct list_head card_list;
 
+	/* dynamic mixer and enum controls */
+	struct list_head dmixers;
+	struct list_head denums;
+	struct list_head dbytes;
 	struct snd_soc_dapm_context dapm;
 
 #ifdef CONFIG_DEBUG_FS
@@ -902,6 +683,7 @@ struct snd_soc_dai_link {
 	int be_id;	/* optional ID for machine driver BE identification */
 
 	const struct snd_soc_pcm_stream *params;
+	bool dsp_loopback;
 
 	unsigned int dai_fmt;           /* format to set on init */
 
@@ -929,9 +711,16 @@ struct snd_soc_dai_link {
 	int (*be_hw_params_fixup)(struct snd_soc_pcm_runtime *rtd,
 			struct snd_pcm_hw_params *params);
 
+	/* BE fixup method for CODEC<->CODEC dailink */
+	int (*be_fixup)(struct snd_soc_dai_link *dai_link,
+			struct snd_soc_dai *dai);
 	/* machine stream operations */
 	const struct snd_soc_ops *ops;
 	const struct snd_soc_compr_ops *compr_ops;
+
+	/*no of substreams */
+	unsigned int playback_count;
+	unsigned int capture_count;
 };
 
 struct snd_soc_codec_conf {
@@ -1037,6 +826,10 @@ struct snd_soc_card {
 	struct list_head dapm_list;
 	struct list_head dapm_dirty;
 
+	/* dynamic mixer and enum controls */
+	struct list_head dmixers;
+	struct list_head denums;
+	struct list_head dbytes;
 	/* Generic DAPM context for the card */
 	struct snd_soc_dapm_context dapm;
 	struct snd_soc_dapm_stats dapm_stats;
@@ -1063,6 +856,7 @@ struct snd_soc_pcm_runtime {
 
 	/* Dynamic PCM BE runtime data */
 	struct snd_soc_dpcm_runtime dpcm[2];
+	int fe_compr;
 
 	long pmdown_time;
 	unsigned char pop_wait:1;
@@ -1086,6 +880,14 @@ struct snd_soc_pcm_runtime {
 struct soc_mixer_control {
 	int min, max, platform_max;
 	unsigned int reg, rreg, shift, rshift, invert;
+
+	/* dynamic controls */
+	struct list_head list;
+	struct snd_kcontrol *dcontrol;
+	int index;
+
+	unsigned int pvt_data_len;
+	char *pvt_data;
 };
 
 struct soc_bytes {
@@ -1100,6 +902,18 @@ struct soc_mreg_control {
 	unsigned int regbase, regcount, nbits, invert;
 };
 
+struct soc_bytes_ext {
+	int max;
+
+	/* dynamic controls */
+	struct list_head list;
+	struct snd_kcontrol *dcontrol;
+	int index;
+
+	unsigned int pvt_data_len;
+	char *pvt_data;
+};
+
 /* enumerated kcontrol */
 struct soc_enum {
 	unsigned short reg;
@@ -1110,6 +924,17 @@ struct soc_enum {
 	unsigned int mask;
 	const char * const *texts;
 	const unsigned int *values;
+	/* dynamic enum controls */
+	char **dtexts;
+	unsigned int *dvalues;
+
+	struct list_head list;
+	struct snd_kcontrol *dcontrol;
+	int index;
+
+	unsigned int pvt_data_len;
+	char *pvt_data;
+	void *dapm;
 };
 
 /* codec IO */

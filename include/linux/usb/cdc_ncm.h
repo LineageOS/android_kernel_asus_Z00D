@@ -125,6 +125,13 @@ struct cdc_ncm_ctx {
 	u16 tx_seq;
 	u16 rx_seq;
 	u16 connected;
+
+	u8 *fragment;
+	u32 fragment_size;
+	u32 fragment_deleted;
+	u32 fragment_recombinated;
+
+	int device_flags;
 };
 
 extern u8 cdc_ncm_select_altsetting(struct usbnet *dev, struct usb_interface *intf);

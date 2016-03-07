@@ -33,6 +33,18 @@ struct persistent_ram_buffer {
 	uint8_t     data[0];
 };
 
+/*
+ * struct persistent_ram_buffer_ctrl
+ *
+ * This structure controls the offset where the pstore is written at, and its
+ * size.  This structure must be in a cacheable memory area, so that atomic
+ * accesses don't lock the RAM bus and trigger starvation.
+ */
+struct persistent_ram_buffer_ctrl {
+	atomic_t    start;
+	atomic_t    size;
+};
+
 #define PERSISTENT_RAM_SIG (0x43474244) /* DBGC */
 
 static inline size_t buffer_size(struct persistent_ram_zone *prz)
@@ -337,10 +349,17 @@ void persistent_ram_free_old(struct persistent_ram_zone *prz)
 	prz->old_log_size = 0;
 }
 
+void persistent_ram_sync_ctrl_buffer(struct persistent_ram_zone *prz)
+{
+	atomic_set(&prz->buffer_ctrl->start, atomic_read(&prz->buffer->start));
+	atomic_set(&prz->buffer_ctrl->size, atomic_read(&prz->buffer->size));
+}
+
 void persistent_ram_zap(struct persistent_ram_zone *prz)
 {
 	atomic_set(&prz->buffer->start, 0);
 	atomic_set(&prz->buffer->size, 0);
+	persistent_ram_sync_ctrl_buffer(prz);
 	persistent_ram_update_header_ecc(prz);
 }
 
@@ -424,11 +443,18 @@ static int persistent_ram_buffer_map(phys_addr_t start, phys_addr_t size,
 static int persistent_ram_post_init(struct persistent_ram_zone *prz, u32 sig,
 				    struct persistent_ram_ecc_info *ecc_info)
 {
-	int ret;
+	int ret = -ENOMEM;
+
+	prz->buffer_ctrl = kmalloc(sizeof(struct persistent_ram_buffer_ctrl), GFP_KERNEL);
+	if (!prz->buffer_ctrl) {
+		pr_err("persistent_ram_post_init: failed to allocate persistent ram control buffer\n");
+		goto err;
+	}
+	persistent_ram_sync_ctrl_buffer(prz);
 
 	ret = persistent_ram_init_ecc(prz, ecc_info);
 	if (ret)
-		return ret;
+		goto err;
 
 	sig ^= PERSISTENT_RAM_SIG;
 
@@ -454,6 +480,9 @@ static int persistent_ram_post_init(struct persistent_ram_zone *prz, u32 sig,
 	persistent_ram_zap(prz);
 
 	return 0;
+err:
+	kfree(prz->buffer_ctrl);
+	return ret;
 }
 
 void persistent_ram_free(struct persistent_ram_zone *prz)
@@ -471,6 +500,7 @@ void persistent_ram_free(struct persistent_ram_zone *prz)
 		prz->vaddr = NULL;
 	}
 	persistent_ram_free_old(prz);
+	kfree(prz->buffer_ctrl);
 	kfree(prz);
 }
 

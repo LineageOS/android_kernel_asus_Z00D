@@ -888,4 +888,20 @@ config TOUCHSCREEN_TPS6507X
 	  To compile this driver as a module, choose M here: the
 	  module will be called tps6507x_ts.
 
+config TOUCHSCREEN_HIMAX_HX8528_ME372CL
+	bool "Himax HX8528 touchscreen"
+	depends on I2C && PF450CL
+
+config TOUCHSCREEN_FT3X17
+	tristate "FTS touchscreen driver for FT5X0X"
+	depends on I2C
+	default N
+	help
+		Say Y here to enable the driver for the touchscreen on the
+		development board.
+		If unsure, say N.
+		To compile this driver as a module, choose M here: the
+		module will be called ft5x0x.ko.
+
+
 endif

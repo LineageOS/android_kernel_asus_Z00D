@@ -245,6 +245,10 @@ static inline void set_cpu_sd_state_idle(void) { }
  */
 extern void show_state_filter(unsigned long state_filter);
 
+#ifdef CONFIG_EMMC_IPANIC
+extern void emmc_ipanic_stream_emmc(void);
+#endif
+
 static inline void show_state(void)
 {
 	show_state_filter(0);
@@ -786,6 +790,12 @@ enum cpu_idle_type {
 #define SD_PREFER_SIBLING	0x1000	/* Prefer to place tasks in a sibling domain */
 #define SD_OVERLAP		0x2000	/* sched_domains of this level overlap */
 
+#ifdef CONFIG_WORKLOAD_CONSOLIDATION
+#define SD_ASYM_CONCURRENCY	0x4000	/* Higher concurrency in front to save power */
+#else
+#define SD_ASYM_CONCURRENCY 0
+#endif
+
 extern int __weak arch_sd_sibiling_asym_packing(void);
 
 struct sched_domain_attr {
@@ -866,6 +876,13 @@ struct sched_domain {
 		void *private;		/* used during construction */
 		struct rcu_head rcu;	/* used during destruction */
 	};
+
+#ifdef CONFIG_WORKLOAD_CONSOLIDATION
+	unsigned int total_groups;
+	unsigned int group_number;
+	unsigned int asym_concurrency;
+	struct sched_group *first_group;	/* ordered by CPU number */
+#endif
 
 	unsigned int span_weight;
 	/*
@@ -1430,6 +1447,9 @@ struct task_struct {
 	unsigned int	sequential_io;
 	unsigned int	sequential_io_avg;
 #endif
+
+	int binder_sender_pid;
+	int binder_sender_tid;
 };
 
 /* Future-safe accessor for struct task_struct's cpus_allowed. */
@@ -1619,6 +1639,9 @@ static inline cputime_t task_gtime(struct task_struct *t)
 #endif
 extern void task_cputime_adjusted(struct task_struct *p, cputime_t *ut, cputime_t *st);
 extern void thread_group_cputime_adjusted(struct task_struct *p, cputime_t *ut, cputime_t *st);
+
+extern int task_free_register(struct notifier_block *n);
+extern int task_free_unregister(struct notifier_block *n);
 
 /*
  * Per process flags

@@ -57,3 +57,7 @@ obj-$(CONFIG_MWIFIEX)	+= mwifiex/
 
 obj-$(CONFIG_BRCMFMAC)	+= brcm80211/
 obj-$(CONFIG_BRCMSMAC)	+= brcm80211/
+
+# ASUS_BSP+++ Add bcm4343s wlan driver
+obj-m += bcm4343s/
+# ASUS_BSP--- Add bcm4343s wlan driver

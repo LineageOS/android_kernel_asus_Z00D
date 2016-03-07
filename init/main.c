@@ -133,6 +133,22 @@ static char *static_command_line;
 
 static char *execute_command;
 static char *ramdisk_execute_command;
+/* ASUS_BSP Deeo : add for kernel charger mode. +++ */
+bool g_Main_mode = true;
+
+static int set_charger_mode(char *str)
+{
+    if (strcmp("main", str) == 0)
+	g_Main_mode = true;
+    else
+	g_Main_mode = false;
+
+    printk("g_Main_mode = %d\n", g_Main_mode);
+    return 0;
+}
+__setup("androidboot.mode=", set_charger_mode);
+EXPORT_SYMBOL(g_Main_mode);
+/*ASUS_BSP Deeo : add for kernel charger mode. --- */
 
 /*
  * If set, this is an indication to the drivers that reset the underlying
@@ -211,6 +227,22 @@ static int __init quiet_kernel(char *str)
 
 early_param("debug", debug_kernel);
 early_param("quiet", quiet_kernel);
+
+int g_BootupUart;
+
+static int __init Set_Bootup_Uart_Mode(char *str)
+{
+	int on = 0;
+
+	if (get_option(&str, &on)) {
+		g_BootupUart = on;
+		return 0;
+	}
+
+	return -EINVAL;
+}
+early_param("bootup.uart", Set_Bootup_Uart_Mode);
+EXPORT_SYMBOL(g_BootupUart);
 
 static int __init loglevel(char *str)
 {
@@ -469,10 +501,41 @@ static void __init mm_init(void)
 	vmalloc_init();
 }
 
+extern u32 lcd_unique_id;
+
 asmlinkage void __init start_kernel(void)
 {
+	/* ZE500CL001S */
+	pr_info("[Progress][Stage] Kernel Starting\n");
+	/* ZE500CL001E */
 	char * command_line;
 	extern const struct kernel_param __start___param[], __stop___param[];
+
+	/* ASUS_BSP +++ */
+	uint8_t *map_addr;
+	u32 res_start = 0xdff00000;
+	u32 addr_index = 0x69050; /*HDMI_audio regs*/
+	u32 temp_val, base_val;
+	bool id_check = true;
+	int i;
+
+	map_addr = ioremap(res_start, 0x00080000); /*resource_start + PSB_VDC_OFFSET, PSB_VDC_SIZE*/
+	base_val = ioread32(map_addr + addr_index);
+	/*printk("[DISPLAY] REG[%x] = 0x%x\n", addr_index, base_val);*/
+	for (i = 1; i < 4; i++) {
+		temp_val = ioread32(map_addr + addr_index + (i * 0x4));
+		/*printk("[DISPLAY] REG[%x] = 0x%x\n", addr_index + (i * 0x4), temp_val);*/
+		if (id_check && base_val != temp_val) {
+			id_check = false;
+			lcd_unique_id = 0xffffffff;
+			printk("[DISPLAY] Incorrect LCD ID from IFWI\n");
+		}
+	}
+	if (id_check)
+		lcd_unique_id = base_val;
+
+	iounmap(map_addr);
+	/* ASUS_BSP --- */
 
 	/*
 	 * Need to run as early as possible, to initialize the
@@ -496,6 +559,9 @@ asmlinkage void __init start_kernel(void)
  * Interrupts are still disabled. Do necessary setups, then
  * enable them
  */
+	/* ZE500CL001S */
+	pr_info("[Progress][CPU] Probe starts\n");
+	/* ZE500CL001E */
 	boot_cpu_init();
 	page_address_init();
 	pr_notice("%s", linux_banner);
