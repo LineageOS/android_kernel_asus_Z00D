@@ -1,0 +1,26 @@
+#
+#  Copyright (c) 2012, UPI-SEMI, Inc. All Rights Reserved.
+#
+
+EXTRA_CFLAGS	+= -DBUILD_UG31XX_LINUX_KERNEL -DuG31xx_OS_ANDROID -DUG31XX_USE_DAEMON_AP_FOR_FILE_OP -DUG31XX_SHELL_ALGORITHM -fno-pic
+EXTRA_CFLAGS	+= -DWAKEUP_TIME_THRD_1_HOUR
+EXTRA_CFLAGS  += -DFEATURE_DISABLE_SUSPEND_OPERATION
+ifdef ASUS_PF400CG
+EXTRA_CFLAGS    += -DUG31XX_2_PERCENT_1_MIN
+endif
+ifdef ASUS_A400CG
+EXTRA_CFLAGS    += -DUG31XX_2_PERCENT_1_MIN
+endif
+
+ug31xx_battery-objs	+= uG31xx_API_Backup.o
+ug31xx_battery-objs	+= uG31xx_API_Capacity.o
+ug31xx_battery-objs	+= uG31xx_API_Measurement.o
+ug31xx_battery-objs	+= uG31xx_API.o
+ug31xx_battery-objs	+= uG31xx_API_Otp.o
+ug31xx_battery-objs	+= uG31xx_API_System.o
+
+ug31xx_battery-objs	+= uG31xx_API_Platform.o
+ug31xx_battery-objs	+= ug31xx_gauge.o
+
+obj-$(CONFIG_UPI_BATTERY)	+= ug31xx_battery.o
+
