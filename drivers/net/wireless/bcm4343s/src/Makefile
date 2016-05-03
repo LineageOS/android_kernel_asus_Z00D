@@ -21,7 +21,8 @@ DHDCFLAGS = -Wall -Wstrict-prototypes -Dlinux -DBCMDRIVER               \
 	-DDHD_DONOT_FORWARD_BCMEVENT_AS_NETWORK_PKT -DRXFRAME_THREAD       \
 	-DMIRACAST_AMPDU_SIZE=8	-DROAM_ENABLE	-DWL_IFACE_COMB_NUM_CHANNELS	\
 	-Idrivers/net/wireless/bcm4343s -Idrivers/net/wireless/bcm4343s/src/include   \
-	-Idrivers/net/wireless/bcm4343s/src/common/include
+	-Idrivers/net/wireless/bcm4343s/src/common/include \
+	-Idrivers/net/wireless/bcm4343s/src/
 
 DHDOFILES = aiutils.o siutils.o sbutils.o bcmutils.o bcmwifi_channels.o \
 	dhd_linux.o dhd_linux_platdev.o dhd_linux_sched.o dhd_pno.o \
