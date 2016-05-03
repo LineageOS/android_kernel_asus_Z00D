@@ -17,7 +17,8 @@ int Init_I2C_Read_Func(FTS_I2c_Read_Function fpI2C_Read);
 int Init_I2C_Write_Func(FTS_I2c_Write_Function fpI2C_Write);
 int SetParamData(char * TestParamData);
 void FreeTestParamData(void);
-void focal_save_scap_sample(short *databuf, int *num);
+void focal_save_scap_sample(int *databuf, int num);
+//void focal_save_scap_sample(short *databuf, int *num);
 void focal_save_mcap_sample(short *databuf, int *num1, int *num2);
 /*zax 20141116 ++++++++++++++*/
 void focal_save_scap_sample1();
