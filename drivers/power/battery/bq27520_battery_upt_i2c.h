@@ -22,7 +22,7 @@
     #define FW_CELL_TYPE_LG                 0x0368
     #define FW_CELL_TYPE_COS_LIGHT          0x0335
     #define LATEST_FW_CFG_VERSION           0x3131
-#elif defined(CONFIG_PF450CL)
+#elif defined(CONFIG_PF450CL) || defined(CONFIG_ZE500CL)
     #define FW_CELL_TYPE_LG                 0x0368
     #define FW_CELL_TYPE_COS_LIGHT          0x0335
     #define LATEST_FW_CFG_VERSION           0x3131

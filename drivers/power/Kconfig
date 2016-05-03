@@ -421,7 +421,7 @@ config INTEL_FG_UIFACE
 	bool "Intel Fuel Gauge User Interface"
 	help
 	  Say Y here to enable support for Intel SW Fuel gauge Algo User Interface.
-if PF450CL
+if PF450CL || ZE500CL
 source "drivers/power/battery/Kconfig"
 endif
 source "drivers/power/reset/Kconfig"

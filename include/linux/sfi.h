@@ -175,7 +175,7 @@ struct sfi_gpio_table_entry {
 	char	pin_name[SFI_NAME_LEN];
 } __packed;
 
-#ifdef CONFIG_PF450CL
+#if defined(CONFIG_PF450CL) || defined(CONFIG_ZE500CL)
 struct sfi_oemr_table_entry {
 	u8      RC_VERSION;
 	u8      SIM_id;
