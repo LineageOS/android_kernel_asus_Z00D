@@ -239,7 +239,7 @@ static int tput_monitor_thread(void *num)
 	} else {
 		tmp_enable = 0;
 	}
-	tput_set_performance_mode(tmp_enable);
+	//tput_set_performance_mode(tmp_enable);
 
 	/* reset tput_diff_bytes */
 	atomic_set(&tput_diff_bytes, 0);
