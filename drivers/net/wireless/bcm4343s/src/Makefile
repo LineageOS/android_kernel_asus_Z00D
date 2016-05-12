@@ -5,9 +5,9 @@
 #
 #
 
-CONFIG_BCMDHD=m
-CONFIG_BCMDHD_SDIO=y
-CONFIG_DHD_USE_SCHED_SCAN=y
+#CONFIG_BCMDHD=y
+#CONFIG_BCMDHD_SDIO=y
+#CONFIG_DHD_USE_SCHED_SCAN=y
 
 DHDCFLAGS = -Wall -Wstrict-prototypes -Dlinux -DBCMDRIVER               \
 	-DBCMDONGLEHOST -DUNRELEASEDCHIP -DBCMDMA32 -DBCMFILEIMAGE            \
@@ -22,7 +22,7 @@ DHDCFLAGS = -Wall -Wstrict-prototypes -Dlinux -DBCMDRIVER               \
 	-DMIRACAST_AMPDU_SIZE=8	-DROAM_ENABLE	-DWL_IFACE_COMB_NUM_CHANNELS	\
 	-Idrivers/net/wireless/bcm4343s -Idrivers/net/wireless/bcm4343s/src/include   \
 	-Idrivers/net/wireless/bcm4343s/src/common/include \
-	-Idrivers/net/wireless/bcm4343s/src/
+	-Idrivers/net/wireless/bcm4343s/src/ -Iinclude/linux/
 
 DHDOFILES = aiutils.o siutils.o sbutils.o bcmutils.o bcmwifi_channels.o \
 	dhd_linux.o dhd_linux_platdev.o dhd_linux_sched.o dhd_pno.o \
