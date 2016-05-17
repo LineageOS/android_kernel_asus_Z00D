@@ -683,9 +683,9 @@ endif
 KBUILD_CPPFLAGS += $(KCPPFLAGS)
 KBUILD_AFLAGS += $(KAFLAGS)
 KBUILD_CFLAGS += $(KCFLAGS)
-ifneq ($(ASUS_FACTORY_BUILD),)
-KBUILD_CPPFLAGS += -DASUS_FACTORY_BUILD=1
-endif
+#ifneq ($(ASUS_FACTORY_BUILD),)
+#KBUILD_CPPFLAGS += -DASUS_FACTORY_BUILD=1
+#endif
 # Use --build-id when available.
 LDFLAGS_BUILD_ID = $(patsubst -Wl$(comma)%,%,\
 			      $(call cc-ldoption, -Wl$(comma)--build-id,))
