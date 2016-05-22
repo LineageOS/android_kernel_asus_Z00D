@@ -35,70 +35,6 @@
 
 #include "zram_drv.h"
 
-/* ASUS BSP +++ Cheryl */
-typedef enum  {
-	EExecuteTypeCompress,
-	EExecuteTypeDecompress,
-	EExecuteTypeFreePage,
-	EExecuteTypeTotal
-} EExecuteType;
-static struct timer_list g_tlObserver;
-static unsigned long g_lExecuteTimes[EExecuteTypeTotal];
-static unsigned long g_lPreviousExecuteTimes[EExecuteTypeTotal];
-static unsigned long g_ulLastReportTime;
-static int ObserverReport(void)
-{
-	int nIndex;
-	unsigned long ulCache[EExecuteTypeTotal];
-	unsigned long ulFrequency[EExecuteTypeTotal] = {0, 0, 0};
-	long lEscaped;
-	long lfEscapedSeconds;
-
-	/* Cache current data */
-	memcpy(ulCache, g_lExecuteTimes, EExecuteTypeTotal * sizeof(unsigned long));
-
-	lEscaped = jiffies - g_ulLastReportTime;
-	lfEscapedSeconds = jiffies_to_msecs(abs(lEscaped));
-
-	g_ulLastReportTime = jiffies;
-
-	/* Calculate execute rate */
-	for (nIndex = 0 ; nIndex < EExecuteTypeTotal ; nIndex++) {
-		if (ulCache[nIndex] >= g_lPreviousExecuteTimes[nIndex]) {
-			ulFrequency[nIndex] = ulCache[nIndex] - g_lPreviousExecuteTimes[nIndex];
-		} else {
-			ulFrequency[nIndex] = -1 - ulCache[nIndex] + g_lPreviousExecuteTimes[nIndex];
-		}
-	}
-	if (ulFrequency[EExecuteTypeCompress] || ulFrequency[EExecuteTypeDecompress] || ulFrequency[EExecuteTypeFreePage])
-		printk("[ZRAM] Frequency: Compress %lu.%03lu/s, Decompress %lu.%03lu/s, Free Page %lu.%03lu/s\n",
-				ulFrequency[EExecuteTypeCompress]*1000/lfEscapedSeconds, ulFrequency[EExecuteTypeCompress]*1000%lfEscapedSeconds,
-				ulFrequency[EExecuteTypeDecompress]*1000/lfEscapedSeconds, ulFrequency[EExecuteTypeDecompress]*1000%lfEscapedSeconds,
-				ulFrequency[EExecuteTypeFreePage]*1000/lfEscapedSeconds, ulFrequency[EExecuteTypeFreePage]*1000%lfEscapedSeconds);
-	for (nIndex = 0 ; nIndex < EExecuteTypeTotal ; nIndex++) {
-		g_lPreviousExecuteTimes[nIndex] = ulCache[nIndex];
-	}
-
-	mod_timer(&g_tlObserver, jiffies + msecs_to_jiffies(1000));
-}
-
-static void ObserverTimerInit(void)
-{
-	int nIndex;
-	init_timer(&g_tlObserver);
-	g_tlObserver.function = ObserverReport;
-	g_tlObserver.data = ((unsigned long) 0);
-	g_tlObserver.expires = jiffies + msecs_to_jiffies(1000);
-
-	for (nIndex = 0 ; nIndex < EExecuteTypeTotal ; nIndex++) {
-		g_lExecuteTimes[EExecuteTypeCompress] = 0;
-		g_lPreviousExecuteTimes[EExecuteTypeCompress] = 0;
-	}
-	g_ulLastReportTime = jiffies;
-	mod_timer(&g_tlObserver, jiffies + msecs_to_jiffies(1000));
-}
-/* ASUS BSP --- Cheryl */
-
 /* Globals */
 static int zram_major;
 static struct zram *zram_devices;
@@ -377,12 +313,6 @@ static void zram_free_page(struct zram *zram, size_t index)
 
 	meta->table[index].handle = 0;
 	meta->table[index].size = 0;
-
-	g_lExecuteTimes[EExecuteTypeFreePage]++;
-	/*
-	if (printk_ratelimit())
-		printk("[ZRAM] %s: Free page times %lu\n", __FUNCTION__, g_lExecuteTimes[EExecuteTypeFreePage]);
-	*/
 }
 
 static int zram_decompress_page(struct zram *zram, char *mem, u32 index)
@@ -418,11 +348,7 @@ static int zram_decompress_page(struct zram *zram, char *mem, u32 index)
 		atomic64_inc(&zram->stats.failed_reads);
 		return ret;
 	}
-	g_lExecuteTimes[EExecuteTypeDecompress]++;
-	/*
-	if (printk_ratelimit())
-		printk("[ZRAM] %s: Decompress times %lu\n", __FUNCTION__, g_lExecuteTimes[EExecuteTypeDecompress]);
-	*/
+
 	return 0;
 }
 
@@ -531,12 +457,6 @@ static int zram_bvec_write(struct zram *zram, struct bio_vec *bvec, u32 index,
 
 	ret = lzo1x_1_compress(uncmem, PAGE_SIZE, src, &clen,
 			       meta->compress_workmem);
-
-	g_lExecuteTimes[EExecuteTypeCompress]++;
-	/*
-	if (printk_ratelimit())
-		printk("[ZRAM] %s: Compress times %lu\n", __FUNCTION__, g_lExecuteTimes[EExecuteTypeCompress]);
-	*/
 
 	if (!is_partial_io(bvec)) {
 		kunmap_atomic(user_mem);
@@ -992,7 +912,6 @@ static int __init zram_init(void)
 	}
 
 	pr_info("Created %u device(s) ...\n", num_devices);
-	ObserverTimerInit();
 
 	return 0;
 
@@ -1026,7 +945,6 @@ static void __exit zram_exit(void)
 
 	kfree(zram_devices);
 	pr_debug("Cleanup done!\n");
-	del_timer(&g_tlObserver);
 }
 
 module_init(zram_init);
