@@ -67,65 +67,6 @@ static inline void disable_cpufreq(void) { }
  * CPUFREQ_ETERNAL shall be used.
  */
 
-struct cpufreq_interactive_tunables {
-	int usage_count;
-	/* Hi speed to bump to from lo speed when load burst (default max) */
-	unsigned int hispeed_freq;
-	/*
-	 * Frequency to which a touch boost takes the cpus to
-	 */
-	unsigned long touchboost_freq;
-	/* Go to hi speed when CPU load at or above this value. */
-#define DEFAULT_GO_HISPEED_LOAD 99
-	unsigned long go_hispeed_load;
-	/* Target load. Lower values result in higher CPU speeds. */
-	spinlock_t target_loads_lock;
-	unsigned int *target_loads;
-	int ntarget_loads;
-	/*
-	 * The minimum amount of time to spend at a frequency before we can ramp
-	 * down.
-	 */
-#define DEFAULT_MIN_SAMPLE_TIME (80 * USEC_PER_MSEC)
-	unsigned long min_sample_time;
-	/*
-	 * The sample rate of the timer used to increase frequency
-	 */
-	unsigned long timer_rate;
-	/*
-	 * Wait this long before raising speed above hispeed, by default a
-	 * single timer interval.
-	 */
-	spinlock_t above_hispeed_delay_lock;
-	unsigned int *above_hispeed_delay;
-	int nabove_hispeed_delay;
-	/* Non-zero means indefinite speed boost active */
-	int boost_val;
-	/* Duration of a boot pulse in usecs */
-	int boostpulse_duration_val;
-	/* End time of boost pulse in ktime converted to usecs */
-	u64 boostpulse_endtime;
-	/* Duration of a touchboost pulse in usecs */
-	int touchboostpulse_duration_val;
-	/* End time of touchboost pulse in ktime converted to usecs */
-	u64 touchboostpulse_endtime;
-	/*
-	 * Max additional time to wait in idle, beyond timer_rate, at speeds
-	 * above minimum before wakeup to reduce speed, or -1 if unnecessary.
-	 */
-#define DEFAULT_TIMER_SLACK (4 * DEFAULT_TIMER_RATE)
-	int timer_slack_val;
-	bool io_is_busy;
-#ifdef CONFIG_IRQ_TIME_ACCOUNTING
-#define DEFAULT_IRQ_LOAD_THRESHOLD 5
-#define DEFAULT_IOWAIT_LOAD_THRESHOLD 15
-	bool io_busy;
-	unsigned int io_busy_mask;
-	unsigned int irq_load_threshold_val;
-	unsigned int iowait_load_threshold_val;
-#endif /* CONFIG_IRQ_TIME_ACCOUNTING */
-};
-
 struct cpufreq_governor;
 
 /* /sys/devices/system/cpu/cpufreq: entry point for global variables */
@@ -496,7 +437,6 @@ void cpufreq_frequency_table_update_policy_cpu(struct cpufreq_policy *policy);
 
 void cpufreq_frequency_table_put_attr(unsigned int cpu);
 
-static void set_cpufreq_boost(unsigned long val);
-static void set_cpufreq_boost_wifi(struct cpufreq_interactive_tunables *tunables, unsigned long val);
+void set_cpufreq_boost(unsigned long val);
 
 #endif /* _LINUX_CPUFREQ_H */
