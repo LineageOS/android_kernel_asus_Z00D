@@ -635,8 +635,8 @@ int ctp_soc_jack_gpio_detect_bp(void)
 			HPDETECT_POLL_INTERVAL + msecs_to_jiffies(3000));
 
 	/* Skip the jack detect if the GPIO pin didn't pull high */
-	if (!gpio_get_value(GPIO_HS_PATH)) /* ASUS_BSP Paul +++ */
-		return ret;
+	//if (!gpio_get_value(GPIO_HS_PATH)) /* ASUS_BSP Paul +++ */
+		//return ret;
 
 	pr_debug("ctp_common:%s\n", __func__);
 	status = ctx->ops->bp_detection(codec, jack, 0);
