@@ -71,8 +71,8 @@ void snd_soc_jack_report(struct snd_soc_jack *jack, int status, int mask)
 	unsigned int sync = 0;
 	int enable;
 	/* Skip the jack detect if the GPIO pin didn't pull high */
-	if (!gpio_get_value(GPIO_HS_PATH)) /* ASUS_BSP Paul +++ */
-		return;
+	//if (!gpio_get_value(GPIO_HS_PATH)) /* ASUS_BSP Paul +++ */
+		//return;
 
 	pr_debug("%s , status = %x , mask = %x \n", __func__ , status , mask);
 	trace_snd_soc_jack_report(jack, mask, status);
