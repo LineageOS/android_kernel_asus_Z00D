@@ -787,7 +787,7 @@ static ssize_t switch_glove_mode_store(struct device *dev, struct device_attribu
 static ssize_t switch_glove_mode_show(struct device *dev, struct device_attribute *attr, char *buf)
 {
 
-	return sprintf(buf, "%d \n", ftxxxx_ts->glove_mode_eable);
+	return sprintf(buf, "%d\n", ftxxxx_ts->glove_mode_eable);
 }
 
 static ssize_t switch_dclick_mode_store(struct device *dev, struct device_attribute *attr, const char *buf, size_t count)
@@ -817,6 +817,39 @@ static ssize_t switch_dclick_mode_show(struct device *dev, struct device_attribu
 {
 
 	return sprintf(buf, "%d \n", ftxxxx_ts->dclick_mode_eable);
+}
+
+static ssize_t switch_keypad_mode_store(struct device *dev, struct device_attribute *attr, const char *buf, size_t count)
+{
+	unsigned int input;
+	struct ftxxxx_ts_data *data = NULL;
+	struct i2c_client *client = container_of(dev, struct i2c_client, dev);
+	data = (struct ftxxxx_ts_data *) i2c_get_clientdata( client );
+	if (sscanf(buf, "%u", &input) != 1)
+		return -EINVAL;
+
+	ftxxxx_ts->keypad_eable = (input != 0);
+
+	if (ftxxxx_ts->keypad_eable) {
+		set_bit(KEY_BACK, data->input_dev->keybit);
+		set_bit(KEY_HOME, data->input_dev->keybit);
+		set_bit(KEY_MENU, data->input_dev->keybit);
+	} else {
+		clear_bit(KEY_BACK, data->input_dev->keybit);
+		clear_bit(KEY_HOME, data->input_dev->keybit);
+		clear_bit(KEY_MENU, data->input_dev->keybit);
+	}
+
+	printk("[Focal][Touch] keypad_eable: %d\n", ftxxxx_ts->keypad_eable);
+
+	return count;
+
+}
+
+static ssize_t switch_keypad_mode_show(struct device *dev, struct device_attribute *attr, char *buf)
+{
+
+	return sprintf(buf, "%d \n", ftxxxx_ts->keypad_eable);
 }
 
 static ssize_t switch_gesture_mode_store(struct device *dev, struct device_attribute *attr, const char *buf, size_t count)
@@ -1877,6 +1910,7 @@ static DEVICE_ATTR(update_progress, Focal_RW_ATTR, update_progress_show, NULL);
 static DEVICE_ATTR(set_reset_pin_level, Focal_RW_ATTR, set_reset_pin_level_show, set_reset_pin_level_store);
 static DEVICE_ATTR(glove_mode, Focal_RW_ATTR, switch_glove_mode_show, switch_glove_mode_store);
 static DEVICE_ATTR(dclick_mode, Focal_RW_ATTR, switch_dclick_mode_show, switch_dclick_mode_store);
+static DEVICE_ATTR(keypad_mode, Focal_RW_ATTR, switch_keypad_mode_show, switch_keypad_mode_store);
 static DEVICE_ATTR(gesture_mode, Focal_RW_ATTR, switch_gesture_mode_show, switch_gesture_mode_store);
 static DEVICE_ATTR(HW_ID, Focal_RW_ATTR, asus_get_hwid_show, NULL);
 static DEVICE_ATTR(Enable_Proximyty_Check, Focal_RW_ATTR, enable_proximity_check_show, enable_proximity_check_store);
@@ -1902,6 +1936,7 @@ static struct attribute *ftxxxx_attributes[] = {
 	&dev_attr_gesture_mode.attr,
 	&dev_attr_HW_ID.attr,
 	&dev_attr_dclick_mode.attr,
+	&dev_attr_keypad_mode.attr,
 	&dev_attr_Enable_Proximyty_Check.attr,
 	NULL
 };
