@@ -110,6 +110,7 @@ struct ftxxxx_ts_data {
 	bool glove_mode_eable;
 	bool dclick_mode_eable;
 	bool gesture_mode_eable;
+	bool keypad_eable;
 	u8 gesture_mode_type;
 	bool reset_pin_status;
 	bool irq_lock_status;

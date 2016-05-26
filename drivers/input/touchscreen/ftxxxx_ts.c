@@ -702,17 +702,23 @@ static void ftxxxx_report_value(struct ftxxxx_ts_data *data)
 		if (event->au8_touch_event[i]== 0 || event->au8_touch_event[i] == 2) {
 			if ((event->au16_y[i] > 2480) & (event->au16_y[i] < 2520)) {
 				if ((event->au16_x[i] > 140) & (event->au16_x[i] < 180)) {
-					input_report_key(data->input_dev, KEY_BACK, 1);
-					key_record |= 1;
-					focal_debug(DEBUG_VERBOSE, "[Focal][Touch][KEY] id=%d BACK KEY Press, key record = %d ! \n", event->au8_finger_id[i], key_record);
+					if(ftxxxx_ts->keypad_eable) {
+						input_report_key(data->input_dev, KEY_BACK, 1);
+						key_record |= 1;
+						focal_debug(DEBUG_VERBOSE, "[Focal][Touch][KEY] id=%d BACK KEY Press, key record = %d ! \n", event->au8_finger_id[i], key_record);
+					}
 				} else if ((event->au16_x[i] > 340) & (event->au16_x[i] < 380)) {
-					input_report_key(data->input_dev, KEY_HOME, 1);
-					key_record |= 1 << 1;
-					focal_debug(DEBUG_VERBOSE, "[Focal][Touch][KEY] id=%d HOME KEY Press, key record = %d ! \n", event->au8_finger_id[i], key_record);
+					if(ftxxxx_ts->keypad_eable) {
+						input_report_key(data->input_dev, KEY_HOME, 1);
+						key_record |= 1 << 1;
+						focal_debug(DEBUG_VERBOSE, "[Focal][Touch][KEY] id=%d HOME KEY Press, key record = %d ! \n", event->au8_finger_id[i], key_record);
+					}
 				} else if ((event->au16_x[i] > 540) & (event->au16_x[i] < 580)) {
-					input_report_key(data->input_dev, KEY_MENU, 1);
-					key_record |= 1 << 2;
-					focal_debug(DEBUG_VERBOSE, "[Focal][Touch][KEY] id=%d MENU KEY Press, key record = %d ! \n", event->au8_finger_id[i], key_record);
+					if(ftxxxx_ts->keypad_eable) {
+						input_report_key(data->input_dev, KEY_MENU, 1);
+						key_record |= 1 << 2;
+						focal_debug(DEBUG_VERBOSE, "[Focal][Touch][KEY] id=%d MENU KEY Press, key record = %d ! \n", event->au8_finger_id[i], key_record);
+					}
 				}
 			} else {
 				input_report_key(data->input_dev, BTN_TOUCH, 1);             /* touch down*/
@@ -735,17 +741,23 @@ static void ftxxxx_report_value(struct ftxxxx_ts_data *data)
 		} else {
 			if ((event->au16_y[i] > 2480) & (event->au16_y[i] < 2520)) {
 				if ((event->au16_x[i] > 140) & (event->au16_x[i] < 180)) {
-					input_report_key(data->input_dev, KEY_BACK, 0);
-					key_record &= 0xfe;
-					focal_debug(DEBUG_VERBOSE, "[Focal][Touch][KEY] id=%d BACK KEY Up ! \n", event->au8_finger_id[i]);
+					if(ftxxxx_ts->keypad_eable) {
+						input_report_key(data->input_dev, KEY_BACK, 0);
+						key_record &= 0xfe;
+						focal_debug(DEBUG_VERBOSE, "[Focal][Touch][KEY] id=%d BACK KEY Up ! \n", event->au8_finger_id[i]);
+					}
 				} else if ((event->au16_x[i] > 340) & (event->au16_x[i] < 380)) {
-					input_report_key(data->input_dev, KEY_HOME, 0);
-					key_record &= 0xfd;
-					focal_debug(DEBUG_VERBOSE, "[Focal][Touch][KEY] id=%d HOME KEY Up ! \n", event->au8_finger_id[i]);
+					if(ftxxxx_ts->keypad_eable) {
+						input_report_key(data->input_dev, KEY_HOME, 0);
+						key_record &= 0xfd;
+						focal_debug(DEBUG_VERBOSE, "[Focal][Touch][KEY] id=%d HOME KEY Up ! \n", event->au8_finger_id[i]);
+					}
 				} else if ((event->au16_x[i] > 540) & (event->au16_x[i] < 580)) {
-					input_report_key(data->input_dev, KEY_MENU, 0);
-					key_record &= 0xfb;
-					focal_debug(DEBUG_VERBOSE, "[Focal][Touch][KEY] id=%d MENU KEY Up ! \n", event->au8_finger_id[i]);
+					if(ftxxxx_ts->keypad_eable) {
+						input_report_key(data->input_dev, KEY_MENU, 0);
+						key_record &= 0xfb;
+						focal_debug(DEBUG_VERBOSE, "[Focal][Touch][KEY] id=%d MENU KEY Up ! \n", event->au8_finger_id[i]);
+					}
 				}
 			}
 			uppoint++;
@@ -758,7 +770,7 @@ static void ftxxxx_report_value(struct ftxxxx_ts_data *data)
 
 	if(event->touch_point == uppoint) {
 		input_report_key(data->input_dev, BTN_TOUCH, 0);
-		if (key_record) {
+		if (key_record && ftxxxx_ts->keypad_eable) {
 			if (key_record & 0x1) {
 				input_report_key(data->input_dev, KEY_BACK, 0);
 			}
@@ -1430,6 +1442,7 @@ static int ftxxxx_ts_probe(struct i2c_client *client, const struct i2c_device_id
 	ftxxxx_ts->usb_status = 0;
 	ftxxxx_ts->glove_mode_eable = 0;
 	ftxxxx_ts->dclick_mode_eable = 0;
+	ftxxxx_ts->keypad_eable = 1;
 	ftxxxx_ts->gesture_mode_eable = 0;
 	ftxxxx_ts->gesture_mode_type = 0;
 	ftxxxx_ts->pdata = pdata;
