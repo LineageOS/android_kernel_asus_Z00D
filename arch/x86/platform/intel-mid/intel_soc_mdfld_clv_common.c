@@ -357,8 +357,6 @@ static void log_wakeup_source(int source)
 	/* ZE500CL001E */
 }
 
-extern int nSuspendInProgress;
-
 /* return the last wake source id, and make statistics about wake sources */
 int pmu_get_wake_source(void)
 {
@@ -366,9 +364,6 @@ int pmu_get_wake_source(void)
 	int i;
 	int source = INVALID_WAKE_SRC;
 	int timeoutcount = 100;
-
-	if (!nSuspendInProgress)
-		return source;
 
 	wake0 = readl(&mid_pmu_cxt->pmu_reg->pm_wks[0]);
 	wake1 = readl(&mid_pmu_cxt->pmu_reg->pm_wks[1]);
