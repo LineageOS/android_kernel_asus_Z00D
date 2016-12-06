@@ -934,15 +934,7 @@ static ssize_t switch_gesture_mode_store(struct device *dev, struct device_attri
 
 static ssize_t switch_gesture_mode_show(struct device *dev, struct device_attribute *attr, char *buf)
 {
-	bool tmp = 0;
-
-	tmp = (ftxxxx_ts->gesture_mode_type >> 6) & 1;
-
-	if (!tmp)
-		return sprintf(buf, "%x \n", tmp);
-	else
-		return sprintf(buf, "%x \n", ftxxxx_ts->gesture_mode_type);
-
+	return sprintf(buf, "%d\n", ftxxxx_ts->gesture_mode_type);
 }
 
 static ssize_t enable_proximity_check_store(struct device *dev, struct device_attribute *attr, const char *buf, size_t count)
