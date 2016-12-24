@@ -159,4 +159,3 @@ obj-$(CONFIG_EXTERNAL_DRIVERS)	+= external_drivers/
 
 # ASUS sensor
 obj-y				+= sensors/
-obj-$(CONFIG_ANDROID)		+= android/
