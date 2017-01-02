@@ -253,9 +253,6 @@ static void intr_complete (struct urb *urb)
 		break;
 	}
 
-	if (!netif_running (dev->net))
-		return;
-
 	status = usb_submit_urb (urb, GFP_ATOMIC);
 	if (status != 0)
 		netif_err(dev, timer, dev->net,
@@ -1756,6 +1753,13 @@ out3:
 	if (info->unbind)
 		info->unbind (dev, udev);
 out1:
+	/* subdrivers must undo all they did in bind() if they
+	 * fail it, but we may fail later and a deferred kevent
+	 * may trigger an error resubmitting itself and, worse,
+	 * schedule a timer. So we kill it all just in case.
+	 */
+	cancel_work_sync(&dev->kevent);
+	del_timer_sync(&dev->delay);
 	free_netdev(net);
 out:
 	return status;

@@ -1011,7 +1011,8 @@ void tcp_free_fastopen_req(struct tcp_sock *tp)
 	}
 }
 
-static int tcp_sendmsg_fastopen(struct sock *sk, struct msghdr *msg, int *size)
+static int tcp_sendmsg_fastopen(struct sock *sk, struct msghdr *msg,
+				int *copied, size_t size)
 {
 	struct tcp_sock *tp = tcp_sk(sk);
 	int err, flags;
@@ -1026,11 +1027,12 @@ static int tcp_sendmsg_fastopen(struct sock *sk, struct msghdr *msg, int *size)
 	if (unlikely(tp->fastopen_req == NULL))
 		return -ENOBUFS;
 	tp->fastopen_req->data = msg;
+	tp->fastopen_req->size = size;
 
 	flags = (msg->msg_flags & MSG_DONTWAIT) ? O_NONBLOCK : 0;
 	err = __inet_stream_connect(sk->sk_socket, msg->msg_name,
 				    msg->msg_namelen, flags);
-	*size = tp->fastopen_req->copied;
+	*copied = tp->fastopen_req->copied;
 	tcp_free_fastopen_req(tp);
 	return err;
 }
@@ -1050,7 +1052,7 @@ int tcp_sendmsg(struct kiocb *iocb, struct sock *sk, struct msghdr *msg,
 
 	flags = msg->msg_flags;
 	if (flags & MSG_FASTOPEN) {
-		err = tcp_sendmsg_fastopen(sk, msg, &copied_syn);
+		err = tcp_sendmsg_fastopen(sk, msg, &copied_syn, size);
 		if (err == -EINPROGRESS && copied_syn > 0)
 			goto out;
 		else if (err)
@@ -1073,7 +1075,7 @@ int tcp_sendmsg(struct kiocb *iocb, struct sock *sk, struct msghdr *msg,
 	if (unlikely(tp->repair)) {
 		if (tp->repair_queue == TCP_RECV_QUEUE) {
 			copied = tcp_send_rcvq(sk, msg, size);
-			goto out;
+			goto out_nopush;
 		}
 
 		err = -EINVAL;
@@ -1246,6 +1248,7 @@ wait_for_memory:
 out:
 	if (copied)
 		tcp_push(sk, flags, mss_now, tp->nonagle);
+out_nopush:
 	release_sock(sk);
 
 	if (copied + copied_syn)
@@ -2918,6 +2921,7 @@ struct sk_buff *tcp_tso_segment(struct sk_buff *skb,
 	netdev_features_t features)
 {
 	struct sk_buff *segs = ERR_PTR(-EINVAL);
+	unsigned int sum_truesize = 0;
 	struct tcphdr *th;
 	unsigned int thlen;
 	unsigned int seq;
@@ -3001,13 +3005,7 @@ struct sk_buff *tcp_tso_segment(struct sk_buff *skb,
 		if (copy_destructor) {
 			skb->destructor = gso_skb->destructor;
 			skb->sk = gso_skb->sk;
-			/* {tcp|sock}_wfree() use exact truesize accounting :
-			 * sum(skb->truesize) MUST be exactly be gso_skb->truesize
-			 * So we account mss bytes of 'true size' for each segment.
-			 * The last segment will contain the remaining.
-			 */
-			skb->truesize = mss;
-			gso_skb->truesize -= mss;
+			sum_truesize += skb->truesize;
 		}
 		skb = skb->next;
 		th = tcp_hdr(skb);
@@ -3024,7 +3022,9 @@ struct sk_buff *tcp_tso_segment(struct sk_buff *skb,
 	if (copy_destructor) {
 		swap(gso_skb->sk, skb->sk);
 		swap(gso_skb->destructor, skb->destructor);
-		swap(gso_skb->truesize, skb->truesize);
+		sum_truesize += skb->truesize;
+		atomic_add(sum_truesize - gso_skb->truesize,
+			   &skb->sk->sk_wmem_alloc);
 	}
 
 	delta = htonl(oldlen + (skb->tail - skb->transport_header) +

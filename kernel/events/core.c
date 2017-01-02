@@ -39,6 +39,7 @@
 #include <linux/hw_breakpoint.h>
 #include <linux/mm_types.h>
 #include <linux/cgroup.h>
+#include <linux/compat.h>
 
 #include "internal.h"
 
@@ -179,7 +180,7 @@ int perf_proc_update_handler(struct ctl_table *table, int write,
 		void __user *buffer, size_t *lenp,
 		loff_t *ppos)
 {
-	int ret = proc_dointvec(table, write, buffer, lenp, ppos);
+	int ret = proc_dointvec_minmax(table, write, buffer, lenp, ppos);
 
 	if (ret || !write)
 		return ret;
@@ -1307,6 +1308,11 @@ retry:
 	 */
 	if (ctx->is_active) {
 		raw_spin_unlock_irq(&ctx->lock);
+		/*
+		 * Reload the task pointer, it might have been changed by
+		 * a concurrent perf_event_context_sched_out().
+		 */
+		task = ctx->task;
 		goto retry;
 	}
 
@@ -1736,6 +1742,11 @@ retry:
 	 */
 	if (ctx->is_active) {
 		raw_spin_unlock_irq(&ctx->lock);
+		/*
+		 * Reload the task pointer, it might have been changed by
+		 * a concurrent perf_event_context_sched_out().
+		 */
+		task = ctx->task;
 		goto retry;
 	}
 
@@ -2020,9 +2031,6 @@ static void __perf_event_sync_stat(struct perf_event *event,
 	perf_event_update_userpage(event);
 	perf_event_update_userpage(next_event);
 }
-
-#define list_next_entry(pos, member) \
-	list_entry(pos->member.next, typeof(*pos), member)
 
 static void perf_event_sync_stat(struct perf_event_context *ctx,
 				   struct perf_event_context *next_ctx)
@@ -2837,7 +2845,7 @@ find_lively_task_by_vpid(pid_t vpid)
 
 	/* Reuse ptrace permission checks for now. */
 	err = -EACCES;
-	if (!ptrace_may_access(task, PTRACE_MODE_READ))
+	if (!ptrace_may_access(task, PTRACE_MODE_READ_REALCREDS))
 		goto errout;
 
 	return task;
@@ -3393,6 +3401,25 @@ static long perf_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 	return 0;
 }
 
+#ifdef CONFIG_COMPAT
+static long perf_compat_ioctl(struct file *file, unsigned int cmd,
+				unsigned long arg)
+{
+	switch (_IOC_NR(cmd)) {
+	case _IOC_NR(PERF_EVENT_IOC_SET_FILTER):
+		/* Fix up pointer size (usually 4 -> 8 in 32-on-64-bit case */
+		if (_IOC_SIZE(cmd) == sizeof(compat_uptr_t)) {
+			cmd &= ~IOCSIZE_MASK;
+			cmd |= sizeof(void *) << IOCSIZE_SHIFT;
+		}
+		break;
+	}
+	return perf_ioctl(file, cmd, arg);
+}
+#else
+# define perf_compat_ioctl NULL
+#endif
+
 int perf_event_task_enable(void)
 {
 	struct perf_event *event;
@@ -3864,7 +3891,7 @@ static const struct file_operations perf_fops = {
 	.read			= perf_read,
 	.poll			= perf_poll,
 	.unlocked_ioctl		= perf_ioctl,
-	.compat_ioctl		= perf_ioctl,
+	.compat_ioctl		= perf_compat_ioctl,
 	.mmap			= perf_mmap,
 	.fasync			= perf_fasync,
 };
@@ -3876,12 +3903,20 @@ static const struct file_operations perf_fops = {
  * to user-space before waking everybody up.
  */
 
+static inline struct fasync_struct **perf_event_fasync(struct perf_event *event)
+{
+	/* only the parent has fasync state */
+	if (event->parent)
+		event = event->parent;
+	return &event->fasync;
+}
+
 void perf_event_wakeup(struct perf_event *event)
 {
 	ring_buffer_wakeup(event);
 
 	if (event->pending_kill) {
-		kill_fasync(&event->fasync, SIGIO, event->pending_kill);
+		kill_fasync(perf_event_fasync(event), SIGIO, event->pending_kill);
 		event->pending_kill = 0;
 	}
 }
@@ -3890,6 +3925,13 @@ static void perf_pending_event(struct irq_work *entry)
 {
 	struct perf_event *event = container_of(entry,
 			struct perf_event, pending);
+	int rctx;
+
+	rctx = perf_swevent_get_recursion_context();
+	/*
+	 * If we 'fail' here, that's OK, it means recursion is already disabled
+	 * and we won't recurse 'further'.
+	 */
 
 	if (event->pending_disable) {
 		event->pending_disable = 0;
@@ -3900,6 +3942,9 @@ static void perf_pending_event(struct irq_work *entry)
 		event->pending_wakeup = 0;
 		perf_event_wakeup(event);
 	}
+
+	if (rctx >= 0)
+		perf_swevent_put_recursion_context(rctx);
 }
 
 /*
@@ -5026,7 +5071,7 @@ static int __perf_event_overflow(struct perf_event *event,
 	else
 		perf_event_output(event, data, regs);
 
-	if (event->fasync && event->pending_kill) {
+	if (*perf_event_fasync(event) && event->pending_kill) {
 		event->pending_wakeup = 1;
 		irq_work_queue(&event->pending);
 	}
@@ -5495,6 +5540,10 @@ static int perf_tp_filter_match(struct perf_event *event,
 				struct perf_sample_data *data)
 {
 	void *record = data->raw->data;
+
+	/* only top level events have filters set */
+	if (event->parent)
+		event = event->parent;
 
 	if (likely(!event->filter) || filter_match_preds(event->filter, record))
 		return 1;
@@ -6596,6 +6645,9 @@ SYSCALL_DEFINE5(perf_event_open,
 	if (attr.freq) {
 		if (attr.sample_freq > sysctl_perf_event_sample_rate)
 			return -EINVAL;
+	} else {
+		if (attr.sample_period & (1ULL << 63))
+			return -EINVAL;
 	}
 
 	/*
@@ -6765,11 +6817,11 @@ SYSCALL_DEFINE5(perf_event_open,
 
 	if (move_group) {
 		synchronize_rcu();
-		perf_install_in_context(ctx, group_leader, event->cpu);
+		perf_install_in_context(ctx, group_leader, group_leader->cpu);
 		get_ctx(ctx);
 		list_for_each_entry(sibling, &group_leader->sibling_list,
 				    group_entry) {
-			perf_install_in_context(ctx, sibling, event->cpu);
+			perf_install_in_context(ctx, sibling, sibling->cpu);
 			get_ctx(ctx);
 		}
 	}
@@ -7386,8 +7438,10 @@ int perf_event_init_task(struct task_struct *child)
 
 	for_each_task_context_nr(ctxn) {
 		ret = perf_event_init_context(child, ctxn);
-		if (ret)
+		if (ret) {
+			perf_event_free_task(child);
 			return ret;
+		}
 	}
 
 	return 0;
