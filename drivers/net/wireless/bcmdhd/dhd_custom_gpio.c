@@ -14,7 +14,6 @@
 #include <dhd_linux.h>
 
 #include <wlioctl.h>
-#include <wl_iw.h>
 #include <asm/intel-mid.h>
 #include <linux/gpio.h>
 #define WL_ERROR(x) printf x
@@ -189,6 +188,12 @@ dhd_custom_get_mac_address(void *adapter, unsigned char *buf)
 	return ret;
 }
 #endif /* GET_CUSTOM_MAC_ENABLE */
+
+struct cntry_locales_custom {
+	char iso_abbrev[WLC_CNTRY_BUF_SZ];
+	char custom_locale[WLC_CNTRY_BUF_SZ];
+	int32 custom_locale_rev;
+};
 
 /* Customized Locale table : OPTIONAL feature */
 const struct cntry_locales_custom translate_custom_table[] = {
