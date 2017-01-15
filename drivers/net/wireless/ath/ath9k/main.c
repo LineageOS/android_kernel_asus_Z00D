@@ -195,13 +195,11 @@ static bool ath_prepare_reset(struct ath_softc *sc)
 	ath9k_debug_samp_bb_mac(sc);
 	ath9k_hw_disable_interrupts(ah);
 
-	if (AR_SREV_9300_20_OR_LATER(ah)) {
-		ret &= ath_stoprecv(sc);
-		ret &= ath_drain_all_txq(sc);
-	} else {
-		ret &= ath_drain_all_txq(sc);
-		ret &= ath_stoprecv(sc);
-	}
+	if (!ath_drain_all_txq(sc))
+		ret = false;
+
+	if (!ath_stoprecv(sc))
+		ret = false;
 
 	return ret;
 }
@@ -891,9 +889,8 @@ void ath9k_calculate_iter_data(struct ieee80211_hw *hw,
 	struct ath_common *common = ath9k_hw_common(ah);
 
 	/*
-	 * Pick the MAC address of the first interface as the new hardware
-	 * MAC address. The hardware will use it together with the BSSID mask
-	 * when matching addresses.
+	 * Use the hardware MAC address as reference, the hardware uses it
+	 * together with the BSSID mask when matching addresses.
 	 */
 	memset(iter_data, 0, sizeof(*iter_data));
 	memset(&iter_data->mask, 0xff, ETH_ALEN);

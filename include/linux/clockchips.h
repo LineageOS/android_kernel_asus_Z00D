@@ -30,7 +30,6 @@ enum clock_event_nofitiers {
 #include <linux/notifier.h>
 
 struct clock_event_device;
-struct module;
 
 /* Clock event mode commands */
 enum clock_event_mode {
@@ -84,7 +83,6 @@ enum clock_event_mode {
  * @irq:		IRQ number (only for non CPU local devices)
  * @cpumask:		cpumask to indicate for which CPUs this device works
  * @list:		list head for the management code
- * @owner:		module reference
  */
 struct clock_event_device {
 	void			(*event_handler)(struct clock_event_device *);
@@ -114,7 +112,6 @@ struct clock_event_device {
 	int			irq;
 	const struct cpumask	*cpumask;
 	struct list_head	list;
-	struct module		*owner;
 } ____cacheline_aligned;
 
 /*

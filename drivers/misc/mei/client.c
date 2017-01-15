@@ -471,7 +471,6 @@ int mei_cl_disconnect(struct mei_cl *cl)
 			cl_err(dev, cl, "failed to disconnect.\n");
 			goto free;
 		}
-		cl->timer_count = MEI_CONNECT_TIMEOUT;
 		mdelay(10); /* Wait for hardware disconnection ready */
 		list_add_tail(&cb->list, &dev->ctrl_rd_list.list);
 	} else {
@@ -1068,16 +1067,8 @@ void mei_cl_all_wakeup(struct mei_device *dev)
 void mei_cl_all_write_clear(struct mei_device *dev)
 {
 	struct mei_cl_cb *cb, *next;
-	struct list_head *list;
 
-	list = &dev->write_list.list;
-	list_for_each_entry_safe(cb, next, list, list) {
-		list_del(&cb->list);
-		mei_io_cb_free(cb);
-	}
-
-	list = &dev->write_waiting_list.list;
-	list_for_each_entry_safe(cb, next, list, list) {
+	list_for_each_entry_safe(cb, next, &dev->write_list.list, list) {
 		list_del(&cb->list);
 		mei_io_cb_free(cb);
 	}
