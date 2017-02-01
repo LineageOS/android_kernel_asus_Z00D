@@ -17,7 +17,6 @@
 #ifndef _CPUFREQ_GOVERNOR_H
 #define _CPUFREQ_GOVERNOR_H
 
-#include <linux/atomic.h>
 #include <linux/cpufreq.h>
 #include <linux/kobject.h>
 #include <linux/mutex.h>
@@ -134,14 +133,12 @@ static void *get_cpu_dbs_info_s(int cpu)				\
 struct cpu_common_dbs_info {
 	struct cpufreq_policy *policy;
 	/*
-	 * Per policy mutex that serializes load evaluation from limit-change
-	 * and work-handler.
+	 * percpu mutex that serializes governor limit change with dbs_timer
+	 * invocation. We do not want dbs_timer to run when user is changing
+	 * the governor or limits.
 	 */
 	struct mutex timer_mutex;
-
 	ktime_t time_stamp;
-	atomic_t skip_work;
-	struct work_struct work;
 };
 
 /* Per cpu structures */
@@ -156,7 +153,7 @@ struct cpu_dbs_info {
 	 * wake-up from idle.
 	 */
 	unsigned int prev_load;
-	struct timer_list timer;
+	struct delayed_work dwork;
 	struct cpu_common_dbs_info *shared;
 };
 
@@ -271,11 +268,11 @@ u64 get_cpu_idle_time(unsigned int cpu, u64 *wall, int io_busy);
 
 extern struct mutex cpufreq_governor_lock;
 
-void gov_add_timers(struct cpufreq_policy *policy, unsigned int delay);
-void gov_cancel_work(struct cpu_common_dbs_info *shared);
 void dbs_check_cpu(struct dbs_data *dbs_data, int cpu);
 int cpufreq_governor_dbs(struct cpufreq_policy *policy,
 		struct common_dbs_data *cdata, unsigned int event);
+void gov_queue_work(struct dbs_data *dbs_data, struct cpufreq_policy *policy,
+		unsigned int delay, bool all_cpus);
 void od_register_powersave_bias_handler(unsigned int (*f)
 		(struct cpufreq_policy *, unsigned int, unsigned int),
 		unsigned int powersave_bias);
