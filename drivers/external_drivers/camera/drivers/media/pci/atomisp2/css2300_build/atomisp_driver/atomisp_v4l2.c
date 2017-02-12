@@ -93,6 +93,8 @@ struct device *atomisp_dev;
 
 void __iomem *atomisp_io_base;
 
+bool firmware_is_loaded = 0;
+
 int atomisp_video_init(struct atomisp_video_pipe *video, const char *name)
 {
 	int ret;
@@ -1031,7 +1033,7 @@ error_mipi_csi2:
 	return ret;
 }
 
-static const struct firmware *
+const struct firmware *
 load_firmware(struct atomisp_device *isp)
 {
 	const struct firmware *fw;
@@ -1287,13 +1289,6 @@ static int atomisp_pci_probe(struct pci_dev *dev,
 		isp->max_isr_latency = CSTATE_EXIT_LATENCY_C1;
 	}
 
-	/* Load isp firmware from user space */
-	isp->firmware = load_firmware(isp);
-	if (!isp->firmware) {
-		err = -ENOENT;
-		goto load_fw_fail;
-	}
-
 	isp->wdt_work_queue = alloc_workqueue(isp->v4l2_dev.name, 0, 1);
 	if (isp->wdt_work_queue == NULL) {
 		dev_err(&dev->dev, "Failed to initialize wdt work queue\n");
@@ -1421,8 +1416,6 @@ enable_msi_fail:
 	destroy_workqueue(isp->wdt_work_queue);
 wdt_work_queue_fail:
 	release_firmware(isp->firmware);
-load_fw_fail:
-	pci_dev_put(isp->pci_root);
 	return err;
 }
 
@@ -1519,7 +1512,7 @@ static void __exit atomisp_exit(void)
 	pci_unregister_driver(&atomisp_pci_driver);
 }
 
-module_init(atomisp_init);
+late_initcall(atomisp_init);
 module_exit(atomisp_exit);
 
 MODULE_AUTHOR("Wen Wang <wen.w.wang@intel.com>");

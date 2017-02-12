@@ -518,6 +518,18 @@ static int atomisp_open(struct file *file)
 
 	mutex_lock(&isp->mutex);
 
+	/* Deferred firmware loading case. */
+	if (!firmware_is_loaded) {
+		isp->firmware = load_firmware(isp);
+		if (!isp->firmware) {
+			dev_err(isp->dev, "Failed to load ISP firmware.\n");
+			ret = -ENOENT;
+			goto error;
+		}
+
+		firmware_is_loaded = 1;
+	}
+
 	if (!isp->input_cnt) {
 		dev_err(isp->dev, "no camera attached\n");
 		ret = -EINVAL;
@@ -684,6 +696,7 @@ static int atomisp_release(struct file *file)
 #else /* CSS20 */
 	hmm_cleanup_mmu_l2();
 #endif /* CSS20 */
+	firmware_is_loaded = 0;
 	hmm_pool_unregister(HMM_POOL_TYPE_DYNAMIC);
 
 	ret = v4l2_subdev_call(isp->flash, core, s_power, 0);
