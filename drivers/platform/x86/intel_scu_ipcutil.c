@@ -1842,6 +1842,7 @@ exit:
 
 	return ret;
 }
+#if 0
 EXPORT_SYMBOL_GPL(intel_scu_ipc_write_oemnib);
 
 /*
@@ -1916,6 +1917,7 @@ exit:
 	return ret;
 }
 EXPORT_SYMBOL_GPL(intel_scu_ipc_read_oemnib);
+#endif
 
 #ifdef DUMP_OSNIB
 /*
