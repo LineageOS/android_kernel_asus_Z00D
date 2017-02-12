@@ -44,7 +44,7 @@
 
 //Add for ATD command+++
 extern int build_version; //Add build version -> user:3, userdebug:2, eng:1
-struct v4l2_subdev *main_sd;
+struct v4l2_subdev *main_sdx;
 
 int ATD_hm2051_status = 0;
 EXPORT_SYMBOL(ATD_hm2051_status);
@@ -1613,7 +1613,7 @@ static int hm2051_probe(struct i2c_client *client,
 		hm2051_remove(client);
 	}
 
-	main_sd = &dev->sd;	//Add for ATD command+++
+	main_sdx = &dev->sd;	//Add for ATD command+++
 
 	pr_info("[Progress][%s] Probe ends\n",HM2051_NAME);
        
