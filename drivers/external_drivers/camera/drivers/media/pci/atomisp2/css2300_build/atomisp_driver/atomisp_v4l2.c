@@ -49,7 +49,7 @@
 #define ATOMISP_INTERNAL_PM	(IS_BYT || IS_MOFD)
 
 /* set reserved memory pool size in page */
-unsigned int repool_pgnr;
+unsigned int repool_pgnr = 18432;
 module_param(repool_pgnr, uint, 0644);
 MODULE_PARM_DESC(repool_pgnr,
 		"Set the reserved memory pool size in page (default:0)");
@@ -60,7 +60,7 @@ module_param(dypool_pgnr, uint, 0644);
 MODULE_PARM_DESC(dypool_pgnr,
 		"Set the dynamic memory pool size in page (default:0)");
 
-bool dypool_enable;
+bool dypool_enable = 1;
 module_param(dypool_enable, bool, 0644);
 MODULE_PARM_DESC(dypool_enable,
 		"dynamic memory pool enable/disable (default:disable)");
