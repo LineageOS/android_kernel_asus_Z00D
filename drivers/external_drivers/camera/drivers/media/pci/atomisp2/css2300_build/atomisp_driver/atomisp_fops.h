@@ -57,4 +57,8 @@ int atomisp_qbuffers_to_css(struct atomisp_sub_device *asd);
 
 extern const struct v4l2_file_operations atomisp_fops;
 
+extern bool firmware_is_loaded;
+
+const struct firmware *load_firmware(struct atomisp_device *isp);
+
 #endif /* __ATOMISP_FOPS_H__ */
