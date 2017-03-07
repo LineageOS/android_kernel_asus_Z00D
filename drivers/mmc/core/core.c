@@ -28,7 +28,6 @@
 #include <linux/random.h>
 #include <linux/slab.h>
 #include <linux/wakelock.h>
-#include <linux/intel_mid_pm.h>
 
 #include <trace/events/mmc.h>
 
@@ -235,19 +234,6 @@ void mmc_request_done(struct mmc_host *host, struct mmc_request *mrq)
 
 EXPORT_SYMBOL(mmc_request_done);
 
-static void mmc_qos_update(struct mmc_host *host, struct mmc_request *mrq,
-		s32 new_value)
-{
-	if (!host || !host->qos || !mrq)
-		return;
-
-	if (host->card && mmc_card_mmc(host->card) && mrq->data) {
-		if (mrq->data->flags & MMC_DATA_WRITE)
-			pm_qos_update_request(host->qos, new_value);
-	} else
-		pm_qos_update_request(host->qos, new_value);
-}
-
 static void
 mmc_start_request(struct mmc_host *host, struct mmc_request *mrq)
 {
@@ -307,7 +293,6 @@ mmc_start_request(struct mmc_host *host, struct mmc_request *mrq)
 		}
 	}
 	mmc_host_clk_hold(host);
-	mmc_qos_update(host, mrq, CSTATE_EXIT_LATENCY_C2);
 	host->ops->request(host, mrq);
 }
 
@@ -513,7 +498,6 @@ static int mmc_wait_for_data_req_done(struct mmc_host *host,
 			    mmc_card_removed(host->card)) {
 				err = host->areq->err_check(host->card,
 							    host->areq);
-				mmc_qos_update(host, mrq, PM_QOS_DEFAULT_VALUE);
 				break; /* return err */
 			} else {
 				printk("issue %s: req failed (CMD%u): %d, retrying...\n",
@@ -559,7 +543,6 @@ static void mmc_wait_for_req_done(struct mmc_host *host,
 		cmd = mrq->cmd;
 		if (!cmd->error || !cmd->retries ||
 		    mmc_card_removed(host->card)) {
-			mmc_qos_update(host, mrq, PM_QOS_DEFAULT_VALUE);
 			break;
 		}
 
