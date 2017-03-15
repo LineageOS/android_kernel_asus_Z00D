@@ -1295,9 +1295,9 @@ static int otm1284a_vid_set_brightness(struct mdfld_dsi_config *dsi_config,
 
 	if (level >= 1) {
 
-		duty_val = (level < 12 ? 12 : level) * 255 / BRIGHTNESS_MAX_LEVEL;
+		duty_val = (level < 5 ? 5 : level) * 255 / BRIGHTNESS_MAX_LEVEL;
 		
-		if (level > 7) {
+		if (level > 1) {
 			if (cabc_status == 1 && duty_val <= 20) {
 				mdfld_dsi_send_mcs_short_lp(sender, 0x55, 0x0, 1, 0);
 				cabc_status = 0;

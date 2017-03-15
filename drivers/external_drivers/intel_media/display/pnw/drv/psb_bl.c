@@ -173,13 +173,7 @@ int psb_set_brightness(struct backlight_device *bd)
 	}
 
 	/* cache the brightness for later use */
-#if defined(CONFIG_ZE500CL) || defined(CONFIG_PF450CL)
-	if (level > BRIGHTNESS_DIM_LEVEL) {
-#endif
-		psb_brightness = level;
-#if defined(CONFIG_ZE500CL) || defined(CONFIG_PF450CL)
-	}
-#endif
+	psb_brightness = level;
 
 	return 0;
 }
