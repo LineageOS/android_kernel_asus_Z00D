@@ -1124,17 +1124,6 @@ static void __mmc_set_clock(struct mmc_host *host, unsigned int hz)
 
 	host->ios.clock = hz;
 
-	/* ASUS_BSP Deeo : dump all controller clock +++ */
-	if (!strcmp(mmc_hostname(host), "mmc1")) {
-		if (host->half_max_clk_count >= 0)
-			printk("[SD] host->ios.clock %d HZ count %d\n", host->ios.clock, host->half_max_clk_count);
-	} else if (!strcmp(mmc_hostname(host), "mmc0")) {
-		printk("[eMMC] host->ios.clock %d HZ count %d\n", host->ios.clock, host->half_max_clk_count);
-	} else if (!strcmp(mmc_hostname(host), "mmc2")) {
-		printk("[SDIO] host->ios.clock %d HZ count %d\n", host->ios.clock, host->half_max_clk_count);
-	}
-	/* ASUS_BSP Deeo : dump all controller clock --- */
-
 	mmc_set_ios(host);
 }
 
