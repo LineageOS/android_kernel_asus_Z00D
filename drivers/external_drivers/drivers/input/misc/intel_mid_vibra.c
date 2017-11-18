@@ -652,7 +652,7 @@ do_disable_device:
 do_freegpio_vibra_enable:
       if (info->gpio_en > 0)
 			gpio_free(info->gpio_en);
-			do_freegpio_vibra_pwm:
+do_freegpio_vibra_pwm:
       if (info->gpio_pwm > 0)
 			gpio_free(info->gpio_pwm);
 out:
