@@ -1225,9 +1225,10 @@ static int sst_set_linked_pipe(struct snd_soc_dapm_widget *w,
 	struct sst_ids *ids = w->priv;
 	pr_debug("%s: widget=%s\n", __func__, w->name);
 	if (SND_SOC_DAPM_EVENT_ON(event)) {
-		if (ids->parent_w && ids->parent_w->power)
+		if (ids->parent_w && ids->parent_w->power) {
 			sst_find_and_send_pipe_algo(sst, w->name, ids);
 			sst_set_pipe_gain(ids, sst, 0);
+		}
 	}
 	return 0;
 }
