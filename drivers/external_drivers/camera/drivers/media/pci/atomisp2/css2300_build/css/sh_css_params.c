@@ -1528,17 +1528,6 @@ static const struct sh_css_3a_config default_3a_config = {
 	{1027, 0, -9219, 16384, -9219, 1027, 0}
 };
 
-static const struct sh_css_3a_config disabled_3a_config = {
-	25559,
-	32768,
-	7209,
-	65535,
-	0,
-	65535,
-	{-6689, -12207, -32768, 32767, 12207, 6689, 0},
-	{2053, 0, -18437, 32767, -18437, 2053, 0}
-};
-
 static const struct sh_css_wb_config default_wb_config = {
 	1,
 	32768,
@@ -1682,20 +1671,7 @@ static const struct sh_css_ecd_config default_ecd_config = {
 	0,					/* 0.0 */
 };
 
-static const struct sh_css_ecd_config disabled_ecd_config = {
-	0,	/* 0.0 */
-	0,	/* 0.0 */
-	0,	/* 0.0 */
-};
-
 static const struct sh_css_ynr_config default_ynr_config = {
-	0,
-	0,
-	0,
-	0,
-};
-
-static const struct sh_css_ynr_config disabled_ynr_config = {
 	0,
 	0,
 	0,
@@ -1714,30 +1690,7 @@ static const struct sh_css_fc_config default_fc_config = {
 	- (1 << (ISP_VEC_ELEMBITS - 1)),	/* -1 */
 };
 
-static const struct sh_css_fc_config disabled_fc_config = {
-	1,
-	(1 << (ISP_VEC_ELEMBITS - 2)),		/* 0.5 */
-	(1 << (ISP_VEC_ELEMBITS - 2)),		/* 0.5 */
-	(1 << (ISP_VEC_ELEMBITS - 2)),		/* 0.5 */
-	(1 << (ISP_VEC_ELEMBITS - 2)),		/* 0.5 */
-	(1 << (ISP_VEC_ELEMBITS - 1)) - 1,	/* 1 */
-	(1 << (ISP_VEC_ELEMBITS - 1)) - 1,	/* 1 */
-	- (1 << (ISP_VEC_ELEMBITS - 1)),	/* -1 */
-	- (1 << (ISP_VEC_ELEMBITS - 1)),	/* -1 */
-};
-
 static const struct sh_css_cnr_config default_cnr_config = {
-	0,
-	0,
-	0,
-	0,
-	0,
-	0,
-	0,
-	0
-};
-
-static const struct sh_css_cnr_config disabled_cnr_config = {
 	0,
 	0,
 	0,
@@ -1801,12 +1754,6 @@ disabled_yuv2rgb_cc_config = {
 static const struct sh_css_rgb2yuv_cc_config
 default_rgb2yuv_cc_config = {
 	/* Bits of fractional part = SH_CSS_RGB2YUV_CSC_COEF_SHIFT = 13 */
-	{2449, 4809, 934, -1382, -2714, 4096, 4096, -3430, -666}
-};
-
-static const struct sh_css_rgb2yuv_cc_config
-disabled_rgb2yuv_cc_config = {
-	/* Bits of fractional part = SH_CSS_RGB2YUV_CSC_COEF_SHIFT = 13s */
 	{2449, 4809, 934, -1382, -2714, 4096, 4096, -3430, -666}
 };
 
