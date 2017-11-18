@@ -108,35 +108,6 @@ static const struct sst_board_config_data sst_byt_ffrd8_bdata = {
 	},
 };
 
-static const struct sst_board_config_data sst_byt_crv2_bdata = {
-	.active_ssp_ports = 1,
-	.platform_id = 3,
-	.board_id = 1,
-	.ihf_num_chan = 1,
-	.osc_clk_freq = 25000000,
-	.ssp_platform_data = {
-		[0] = {
-			.ssp_cfg_sst = 1,
-			.port_number = 0,
-			.is_master = 1,
-			.pack_mode = 1,
-			.num_slots_per_frame = 2,
-			.num_bits_per_slot = 24,
-			.active_tx_map = 3,
-			.active_rx_map = 3,
-			.ssp_frame_format = 3,
-			.frame_polarity = 1,
-			.serial_bitrate_clk_mode = 0,
-			.frame_sync_width = 24,
-			.dma_handshake_interface_tx = 1,
-			.dma_handshake_interface_rx = 0,
-			.network_mode = 0,
-			.start_delay = 1,
-			.ssp_base_add = SST_BYT_SSP0_PHY_ADDR,
-		},
-	},
-};
-
 static const struct sst_info byt_fwparse_info = {
 	.use_elf	= true,
 	.max_streams	= 4,
