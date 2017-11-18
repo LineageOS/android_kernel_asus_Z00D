@@ -987,10 +987,6 @@ static const struct snd_kcontrol_new sst_in_sw_codec1 =
 	SOC_SINGLE_EXT("Switch", SST_IN_SWITCH, 2, 1, 0,
 		sst_mix_get, sst_mix_put);
 
-static const struct snd_kcontrol_new sst_in_sw_sidetone =
-	SOC_SINGLE_EXT("Switch", SST_IN_SWITCH, 3, 1, 0,
-		sst_mix_get, sst_mix_put);
-
 static const struct snd_kcontrol_new sst_in_sw_speech_tx =
 	SOC_SINGLE_EXT("Switch", SST_IN_SWITCH, 4, 1, 0,
 		sst_mix_get, sst_mix_put);
