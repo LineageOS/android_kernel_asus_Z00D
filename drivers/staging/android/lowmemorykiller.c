@@ -119,7 +119,8 @@ static int lowmem_shrink(struct shrinker *s, struct shrink_control *sc)
 	int nr_swap_pages = get_nr_swap_pages();
 	int other_free = global_page_state(NR_FREE_PAGES) - totalreserve_pages + nr_swap_pages;
 	int other_file = global_page_state(NR_FILE_PAGES) -
-						global_page_state(NR_SHMEM) - total_swapcache_pages();;
+						global_page_state(NR_SHMEM) -
+						total_swapcache_pages();
 
 	if (lowmem_adj_size < array_size)
 		array_size = lowmem_adj_size;
@@ -248,46 +249,13 @@ static int lowmem_shrink(struct shrinker *s, struct shrink_control *sc)
 				nTaskNum--;
 			}
 		}
-		/*
-		struct task_node *pTaskIterator;
-		struct task_node *pTaskNext;
-		list_for_each_entry_safe(pTaskIterator, pTaskNext, &ListHead, node) {
-			char *szName = "NULL";
-			int nAdj = 0;
-			int nSize = 0;
-			struct task_struct *pTask;
-			pTask = pTaskIterator->pTask;
-			if (!pTask)
-				continue;
-			task_lock(pTask);
-			if (pTask->comm)
-				szName = pTask->comm;
-			if (pTask->signal)
-				nAdj = pTask->signal->oom_score_adj;
-			if (pTask->mm)
-				nSize = get_mm_rss(pTask->mm);
-			lowmem_print(3, "[Current] comm: %s, oom_score_adj: %d, tasksize: %d\n", pTask->comm, nAdj, nSize);
-			task_unlock(pTask);
-		}*/
-
+		selected = p;
+		selected_tasksize = tasksize;
+		selected_oom_score_adj = oom_score_adj;
+		lowmem_print(2, "select '%s' (%d), adj %hd, size %d, to kill\n",
+			     p->comm, p->pid, oom_score_adj, tasksize);
 	}
-	struct task_node *pTaskIterator;
-	struct task_node *pTaskNext;
-	list_for_each_entry_safe_reverse(pTaskIterator, pTaskNext, &ListHead, node) {
-		selected = pTaskIterator->pTask;
-		if (!selected)
-			continue;
-		task_lock(selected);
-		if (test_tsk_thread_flag(selected, TIF_MEMDIE)) {
-			task_unlock(selected);
-			continue;
-		}
-		if (selected->signal)
-			selected_oom_score_adj = selected->signal->oom_score_adj;
-		if (selected->mm)
-			selected_tasksize = get_mm_rss(selected->mm);
-		task_unlock(selected);
-
+	if (selected) {
 		long cache_size = other_file * (long)(PAGE_SIZE / 1024);
 		long cache_limit = minfree * (long)(PAGE_SIZE / 1024);
 		long free = other_free * (long)(PAGE_SIZE / 1024);
@@ -304,9 +272,8 @@ static int lowmem_shrink(struct shrinker *s, struct shrink_control *sc)
 			     min_score_adj,
 			     free);
 		lowmem_deathpending_timeout = jiffies + HZ;
-		send_sig(SIGKILL, selected, 0);
-		lmk_sigkill_cnt++;
 		set_tsk_thread_flag(selected, TIF_MEMDIE);
+		send_sig(SIGKILL, selected, 0);
 		rem -= selected_tasksize;
 	}
 	list_reset(&ListHead);

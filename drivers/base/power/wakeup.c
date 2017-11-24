@@ -726,7 +726,7 @@ void pm_get_active_wakeup_sources(char *pending_wakeup_source, size_t max)
 }
 EXPORT_SYMBOL_GPL(pm_get_active_wakeup_sources);
 
-void print_active_wakeup_sources(void)
+static void print_active_wakeup_sources(void)
 {
 	struct wakeup_source *ws;
 	int active = 0;

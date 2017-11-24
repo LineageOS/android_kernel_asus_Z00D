@@ -83,7 +83,7 @@ struct dst_entry *inet6_csk_route_req(struct sock *sk,
 	rcu_read_unlock();
 	fl6->saddr = treq->loc_addr;
 	fl6->flowi6_oif = treq->iif;
-	fl6->flowi6_mark = treq->ir_mark;
+	fl6->flowi6_mark = inet_rsk(req)->ir_mark;
 	fl6->fl6_dport = inet_rsk(req)->rmt_port;
 	fl6->fl6_sport = inet_rsk(req)->loc_port;
 	fl6->flowi6_uid = sk->sk_uid;

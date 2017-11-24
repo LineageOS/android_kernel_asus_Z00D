@@ -103,17 +103,3 @@ void *kvmalloc(size_t size)
 	}
 	return buffer;
 }
-
-/**
- * do_vfree - workqueue routine for freeing vmalloced memory
- * @work: data to be freed
- *
- * The work_struct is overlaid to the data being freed, as at the point
- * the work is scheduled the data is no longer valid, be its freeing
- * needs to be delayed until safe.
- */
-static void do_vfree(struct work_struct *work)
-{
-	vfree(work);
-}
-
